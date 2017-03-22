@@ -23,7 +23,6 @@ import akka.kafka.{ConsumerSettings, ProducerSettings}
 import akka.stream.ActorMaterializer
 import akka.testkit.TestKit
 import org.apache.kafka.clients.consumer.ConsumerConfig
-import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.serialization._
 import org.scalatest._
@@ -31,21 +30,21 @@ import org.scalatest._
 import scala.collection.immutable.Seq
 
 object KafkaSpec {
-  case class Event(eventId: String, aggregateId: String, payload: String)
+  case class ExampleEvent(eventId: String, aggregateId: String, payload: String)
 
-  class EventSerialization extends Serializer[Event] with Deserializer[Event] {
+  class EventSerialization extends Serializer[ExampleEvent] with Deserializer[ExampleEvent] {
     override def close(): Unit =
       ()
 
     override def configure(configs: JMap[String, _], isKey: Boolean): Unit =
       ()
 
-    override def serialize(topic: String, data: Event): Array[Byte] =
+    override def serialize(topic: String, data: ExampleEvent): Array[Byte] =
       s"${data.eventId}-${data.aggregateId}-${data.payload}".getBytes("UTF-8")
 
-    override def deserialize(topic: String, data: Array[Byte]): Event = {
+    override def deserialize(topic: String, data: Array[Byte]): ExampleEvent = {
       val components = new String(data, "UTF-8").split("-")
-      Event(components.head, components(1), components(2))
+      ExampleEvent(components.head, components(1), components(2))
     }
   }
 }
@@ -55,10 +54,10 @@ abstract class KafkaSpec extends TestKit(ActorSystem("test")) with WordSpecLike 
 
   implicit val materializer = ActorMaterializer()
 
-  val producerSettings: ProducerSettings[String, Event] = ProducerSettings(system, new StringSerializer, new EventSerialization)
+  val producerSettings: ProducerSettings[String, ExampleEvent] = ProducerSettings(system, new StringSerializer, new EventSerialization)
     .withBootstrapServers(s"localhost:${KafkaServer.kafkaPort}")
 
-  def consumerSettings(groupId: String): ConsumerSettings[String, Event] = ConsumerSettings(system, new StringDeserializer, new EventSerialization)
+  def consumerSettings(groupId: String): ConsumerSettings[String, ExampleEvent] = ConsumerSettings(system, new StringDeserializer, new EventSerialization)
     .withBootstrapServers(s"localhost:${KafkaServer.kafkaPort}")
     .withProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
     .withGroupId(groupId)

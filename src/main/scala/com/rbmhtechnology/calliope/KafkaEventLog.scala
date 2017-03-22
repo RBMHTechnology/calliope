@@ -24,7 +24,7 @@ import akka.stream.scaladsl.{Flow, Keep}
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
 
-object EventLog {
+object KafkaEventLog {
   def apply[K, V](producerSettings: ProducerSettings[K, V],
                   consumerSettings: ConsumerSettings[K, V],
                   subscription: Subscription): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], Control] = {

@@ -26,15 +26,15 @@ import org.apache.kafka.clients.producer.ProducerRecord
 class KafkaEventLogSpec extends KafkaSpec {
   import KafkaSpec._
 
-  val e1 = Event("1", "A", "P1")
-  val e2 = Event("2", "A", "P2")
+  val e1 = ExampleEvent("1", "A", "P1")
+  val e2 = ExampleEvent("2", "A", "P2")
 
-  def record(event: Event): ProducerRecord[String, Event] =
+  def record(event: ExampleEvent): ProducerRecord[String, ExampleEvent] =
     new ProducerRecord(topic, event.aggregateId, event)
 
-  def probes(groupId: String): (TestPublisher.Probe[ProducerRecord[String, Event]], TestSubscriber.Probe[ConsumerRecord[String, Event]]) = {
-    val log = EventLog(producerSettings, consumerSettings(groupId), Subscriptions.topics(topic))
-    TestSource.probe[ProducerRecord[String, Event]].via(log).toMat(TestSink.probe[ConsumerRecord[String, Event]])(Keep.both).run()
+  def probes(groupId: String): (TestPublisher.Probe[ProducerRecord[String, ExampleEvent]], TestSubscriber.Probe[ConsumerRecord[String, ExampleEvent]]) = {
+    val log = KafkaEventLog(producerSettings, consumerSettings(groupId), Subscriptions.topics(topic))
+    TestSource.probe[ProducerRecord[String, ExampleEvent]].via(log).toMat(TestSink.probe[ConsumerRecord[String, ExampleEvent]])(Keep.both).run()
   }
 
   "An event log flow" must {
