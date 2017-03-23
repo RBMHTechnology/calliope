@@ -32,6 +32,9 @@ class KafkaMetadataSpec extends KafkaSpec {
   override def beforeAll(): Unit = {
     super.beforeAll()
     producer = producerSettings.createKafkaProducer()
+    producer.send(new ProducerRecord[String, ExampleEvent](tp1.topic, tp1.partition, null, ExampleEvent("e1", "a1", "x")))
+    producer.send(new ProducerRecord[String, ExampleEvent](tp2.topic, tp2.partition, null, ExampleEvent("e2", "a2", "y")))
+    producer.send(new ProducerRecord[String, ExampleEvent](tp2.topic, tp2.partition, null, ExampleEvent("e3", "a3", "z"))).get
   }
 
   override def afterAll(): Unit = {
@@ -45,15 +48,11 @@ class KafkaMetadataSpec extends KafkaSpec {
   def endOffsetsSubscriber(topic: String): TestSubscriber.Probe[Map[TopicPartition, Long]] =
     KafkaMetadata.endOffsets(consumerSettings(group), topic).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
 
-  def committedOffsetsSubscriber(topic: String): TestSubscriber.Probe[Map[TopicPartition, Long]] =
+  def committedOffsetsSubscriber(topic: String, group: String = group): TestSubscriber.Probe[Map[TopicPartition, Long]] =
     KafkaMetadata.committedOffsets(consumerSettings(group), topic).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
 
-  "A Metadata.endOffsets source" must {
+  "KafkaMetadata" must {
     "emit the current end offsets of given topic and then complete" in {
-      producer.send(new ProducerRecord[String, ExampleEvent](tp1.topic, tp1.partition, null, ExampleEvent("e1", "a1", "x")))
-      producer.send(new ProducerRecord[String, ExampleEvent](tp2.topic, tp2.partition, null, ExampleEvent("e2", "a2", "y")))
-      producer.send(new ProducerRecord[String, ExampleEvent](tp2.topic, tp2.partition, null, ExampleEvent("e3", "a3", "z"))).get
-
       val sub = endOffsetsSubscriber(topic)
       sub.request(1)
 
@@ -64,13 +63,13 @@ class KafkaMetadataSpec extends KafkaSpec {
       sub.expectComplete()
     }
     "emit the committed offsets of given topic and then complete" in {
-      val consumer = consumerSettings(group).createKafkaConsumer()
+      val consumer = consumerSettings("other").createKafkaConsumer()
       consumer.subscribe(Seq(topic).asJava)
-      consumer.poll(3000).count
+      consumer.poll(3000).count should be(3)
       consumer.commitSync()
       consumer.close()
 
-      val sub = committedOffsetsSubscriber(topic)
+      val sub = committedOffsetsSubscriber(topic, group = "other")
       sub.request(1)
 
       val expectedOffsets = Map(tp0 -> 0L, tp1 -> 1L, tp2 -> 2L)
