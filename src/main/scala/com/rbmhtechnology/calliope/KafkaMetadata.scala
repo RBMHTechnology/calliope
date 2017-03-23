@@ -28,6 +28,9 @@ import scala.collection.JavaConverters._
 import scala.collection.immutable.Map
 
 object KafkaMetadata {
+  def beginOffsets[K, V](consumerSettings: ConsumerSettings[K, V], topicPartitions: Set[TopicPartition]): Source[Map[TopicPartition, Long], NotUsed] =
+    offsets[K, V](consumerSettings, beginOffsets(_, topicPartitions))
+
   def endOffsets[K, V](consumerSettings: ConsumerSettings[K, V], topic: String): Source[Map[TopicPartition, Long], NotUsed] =
     offsets[K, V](consumerSettings, endOffsets(_, topic))
 
@@ -40,11 +43,14 @@ object KafkaMetadata {
   private def offsets[K, V](consumerSettings: ConsumerSettings[K, V], f: KafkaConsumer[K, V] => Map[TopicPartition, Long]): Source[Map[TopicPartition, Long], NotUsed] =
     Source.fromGraph(new KafkaMetadata(consumerSettings)(f))
 
-  private def committedOffsets[K, V](consumer: KafkaConsumer[K, V], topic: String): Map[TopicPartition, Long] =
-    topicPartitions(consumer, topic).foldLeft(Map.empty[TopicPartition, Long]) { case (acc, tp) => acc.updated(tp, Option(consumer.committed(tp)).map(_.offset).getOrElse(0L)) }
+  private def beginOffsets[K, V](consumer: KafkaConsumer[K, V], topicPartitions: Set[TopicPartition]): Map[TopicPartition, Long] =
+    consumer.beginningOffsets(topicPartitions.asJava).asScala.mapValues(_.toLong).toMap
 
   private def endOffsets[K, V](consumer: KafkaConsumer[K, V], topic: String): Map[TopicPartition, Long] =
     consumer.endOffsets(topicPartitions(consumer, topic).asJava).asScala.mapValues(_.toLong).toMap
+
+  private def committedOffsets[K, V](consumer: KafkaConsumer[K, V], topic: String): Map[TopicPartition, Long] =
+    topicPartitions(consumer, topic).foldLeft(Map.empty[TopicPartition, Long]) { case (acc, tp) => acc.updated(tp, Option(consumer.committed(tp)).map(_.offset).getOrElse(0L)) }
 
   private def topicPartitions[K, V](consumer: KafkaConsumer[K, V], topic: String): Set[TopicPartition] =
     consumer.partitionsFor(topic).asScala.map(pi => new TopicPartition(topic, pi.partition)).toSet

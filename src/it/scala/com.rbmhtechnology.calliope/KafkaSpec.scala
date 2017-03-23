@@ -62,12 +62,17 @@ abstract class KafkaSpec extends TestKit(ActorSystem("test")) with WordSpecLike 
     .withProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
     .withGroupId(groupId)
 
+  val group: String = "test"
   val topic: String = "test"
 
   val topicPartitions: Seq[TopicPartition] = Seq(
     new TopicPartition(topic, 0),
     new TopicPartition(topic, 1),
     new TopicPartition(topic, 2))
+
+  val tp0: TopicPartition = topicPartitions(0)
+  val tp1: TopicPartition = topicPartitions(1)
+  val tp2: TopicPartition = topicPartitions(2)
 
   override def beforeAll(): Unit = {
     KafkaServer.start()

@@ -39,18 +39,17 @@ class KafkaMetadataSpec extends KafkaSpec {
     super.afterAll()
   }
 
+  def beginOffsetsSubscriber(topicPartitions: Set[TopicPartition]): TestSubscriber.Probe[Map[TopicPartition, Long]] =
+    KafkaMetadata.beginOffsets(consumerSettings(group), topicPartitions).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
+
   def endOffsetsSubscriber(topic: String): TestSubscriber.Probe[Map[TopicPartition, Long]] =
-    KafkaMetadata.endOffsets(consumerSettings(topic), topic).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
+    KafkaMetadata.endOffsets(consumerSettings(group), topic).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
 
   def committedOffsetsSubscriber(topic: String): TestSubscriber.Probe[Map[TopicPartition, Long]] =
-    KafkaMetadata.committedOffsets(consumerSettings(topic), topic).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
+    KafkaMetadata.committedOffsets(consumerSettings(group), topic).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
 
   "A Metadata.endOffsets source" must {
     "emit the current end offsets of given topic and then complete" in {
-      val tp0 = topicPartitions(0)
-      val tp1 = topicPartitions(1)
-      val tp2 = topicPartitions(2)
-
       producer.send(new ProducerRecord[String, ExampleEvent](tp1.topic, tp1.partition, null, ExampleEvent("e1", "a1", "x")))
       producer.send(new ProducerRecord[String, ExampleEvent](tp2.topic, tp2.partition, null, ExampleEvent("e2", "a2", "y")))
       producer.send(new ProducerRecord[String, ExampleEvent](tp2.topic, tp2.partition, null, ExampleEvent("e3", "a3", "z"))).get
@@ -65,13 +64,9 @@ class KafkaMetadataSpec extends KafkaSpec {
       sub.expectComplete()
     }
     "emit the committed offsets of given topic and then complete" in {
-      val tp0 = topicPartitions(0)
-      val tp1 = topicPartitions(1)
-      val tp2 = topicPartitions(2)
-
-      val consumer = consumerSettings(topic).createKafkaConsumer()
+      val consumer = consumerSettings(group).createKafkaConsumer()
       consumer.subscribe(Seq(topic).asJava)
-      consumer.poll(3000).count should be(3)
+      consumer.poll(3000).count
       consumer.commitSync()
       consumer.close()
 
@@ -79,6 +74,16 @@ class KafkaMetadataSpec extends KafkaSpec {
       sub.request(1)
 
       val expectedOffsets = Map(tp0 -> 0L, tp1 -> 1L, tp2 -> 2L)
+      val actualOffsets= sub.expectNext()
+
+      actualOffsets should be(expectedOffsets)
+      sub.expectComplete()
+    }
+    "emit the begin offsets of given topic partitions and then complete" in {
+      val sub = beginOffsetsSubscriber(topicPartitions.toSet)
+      sub.request(1)
+
+      val expectedOffsets = Map(tp0 -> 0L, tp1 -> 0L, tp2 -> 0L)
       val actualOffsets= sub.expectNext()
 
       actualOffsets should be(expectedOffsets)
