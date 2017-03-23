@@ -16,6 +16,8 @@
 
 package com.rbmhtechnology.calliope
 
+import akka.kafka.Subscriptions
+import akka.kafka.scaladsl.Consumer
 import akka.stream.scaladsl.Keep
 import akka.stream.testkit.TestSubscriber
 import akka.stream.testkit.scaladsl.TestSink
@@ -26,6 +28,7 @@ import org.scalatest.BeforeAndAfterEach
 import scala.collection.immutable.Seq
 
 class KafkaEventsSpec extends KafkaSpec with BeforeAndAfterEach {
+  import KafkaEvents._
   import KafkaSpec._
 
   var producer: KafkaProducer[String, ExampleEvent] = _
@@ -48,10 +51,17 @@ class KafkaEventsSpec extends KafkaSpec with BeforeAndAfterEach {
   }
 
   def endSubscriber: TestSubscriber.Probe[ExampleEvent] =
-    KafkaMetadata.endOffsets(consumerSettings(group), topic).flatMapConcat(KafkaEvents.until(consumerSettings(group), _)).map(_.value).toMat(TestSink.probe[ExampleEvent])(Keep.right).run()
+    KafkaMetadata.endOffsets(consumerSettings(group), topic).flatMapConcat(KafkaEvents.until(consumerSettings(group), _)).map(_.value)
+      .toMat(TestSink.probe[ExampleEvent])(Keep.right).run()
 
   def untilSubscriber(offsets: Map[TopicPartition, Long]): TestSubscriber.Probe[ExampleEvent] =
-    KafkaEvents.until(consumerSettings(group), offsets).map(_.value).toMat(TestSink.probe[ExampleEvent])(Keep.right).run()
+    KafkaEvents.until(consumerSettings(group), offsets).map(_.value)
+      .toMat(TestSink.probe[ExampleEvent])(Keep.right).run()
+
+  def consumedOffsets(topic: String): (ConsumedOffsets, TestSubscriber.Probe[ExampleEvent]) =
+    Consumer.plainSource(consumerSettings(group), Subscriptions.topics(topic))
+      .viaMat(KafkaEvents.consumedOffsets(Map.empty))(Keep.right).map(_.value)
+      .toMat(TestSink.probe[ExampleEvent])(Keep.both).run()
 
   "An until event source" must {
     "complete immediately if given offsets are not greater than begin offsets" in {
@@ -70,6 +80,16 @@ class KafkaEventsSpec extends KafkaSpec with BeforeAndAfterEach {
       sub.request(2)
       sub.expectNextN(2) should be(Seq(e1, e2))
       sub.expectComplete()
+    }
+  }
+
+  "A consumed offsets tracker" must {
+    "provide consumed offsets at runtime" in {
+      val (co, sub) = consumedOffsets(topic)
+
+      sub.request(3)
+      sub.expectNextN(3)
+      co.get should be(Map(tp1 -> 0L, tp2 -> 1L))
     }
   }
 }
