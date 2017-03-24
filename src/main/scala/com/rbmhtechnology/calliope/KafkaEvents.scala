@@ -16,34 +16,16 @@
 
 package com.rbmhtechnology.calliope
 
-import java.util.concurrent.atomic.AtomicReference
-
 import akka.NotUsed
 import akka.kafka.scaladsl.Consumer
 import akka.kafka.{ConsumerSettings, Subscriptions}
-import akka.stream.scaladsl.{Flow, Source}
+import akka.stream.scaladsl.Source
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.TopicPartition
 
 import scala.collection.immutable.Map
 
 object KafkaEvents {
-  trait ConsumedOffsets {
-    def get: Map[TopicPartition, Long]
-  }
-
-  private class ConsumedOffsetsImpl(ref: AtomicReference[Map[TopicPartition, Long]]) extends ConsumedOffsets {
-    def get: Map[TopicPartition, Long] = ref.get
-  }
-
-  def consumedOffsets[K, V](initialOffsets: Map[TopicPartition, Long]): Flow[ConsumerRecord[K, V], ConsumerRecord[K, V], ConsumedOffsets] = {
-    val currentOffsets = new AtomicReference[Map[TopicPartition, Long]](initialOffsets)
-    Flow[ConsumerRecord[K, V]].map {
-      cr => currentOffsets.updateAndGet(updateOffsets(_, cr))
-      cr
-    }.mapMaterializedValue(_ => new ConsumedOffsetsImpl(currentOffsets))
-  }
-
   def until[K, V](consumerSettings: ConsumerSettings[K, V], offsets: Map[TopicPartition, Long]): Source[ConsumerRecord[K, V], NotUsed] =
     KafkaMetadata.beginOffsets(consumerSettings, offsets.keySet).flatMapConcat { beginOffsets =>
       val untilOffsets = offsets.filter {
@@ -64,7 +46,4 @@ object KafkaEvents {
       current.nonEmpty
     }
   }
-
-  private[calliope] def updateOffsets[K, V](currentOffsets: Map[TopicPartition, Long], cr: ConsumerRecord[K, V]): Map[TopicPartition, Long] =
-    currentOffsets.updated(new TopicPartition(cr.topic, cr.partition), cr.offset)
 }

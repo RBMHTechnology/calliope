@@ -28,7 +28,6 @@ import org.scalatest.BeforeAndAfterEach
 import scala.collection.immutable.Seq
 
 class KafkaEventsSpec extends KafkaSpec with BeforeAndAfterEach {
-  import KafkaEvents._
   import KafkaSpec._
 
   var producer: KafkaProducer[String, ExampleEvent] = _
@@ -58,9 +57,9 @@ class KafkaEventsSpec extends KafkaSpec with BeforeAndAfterEach {
     KafkaEvents.until(consumerSettings(group), offsets).map(_.value)
       .toMat(TestSink.probe[ExampleEvent])(Keep.right).run()
 
-  def consumedOffsets(topic: String): (ConsumedOffsets, TestSubscriber.Probe[ExampleEvent]) =
+  def offsetsTracker(topic: String): (KafkaOffsetsTracker, TestSubscriber.Probe[ExampleEvent]) =
     Consumer.plainSource(consumerSettings(group), Subscriptions.topics(topic))
-      .viaMat(KafkaEvents.consumedOffsets(Map.empty))(Keep.right).map(_.value)
+      .viaMat(KafkaOffsetsTracker(Map.empty))(Keep.right).map(_.value)
       .toMat(TestSink.probe[ExampleEvent])(Keep.both).run()
 
   "An until event source" must {
@@ -83,13 +82,13 @@ class KafkaEventsSpec extends KafkaSpec with BeforeAndAfterEach {
     }
   }
 
-  "A consumed offsets tracker" must {
+  "An offsets tracker" must {
     "provide consumed offsets at runtime" in {
-      val (co, sub) = consumedOffsets(topic)
+      val (co, sub) = offsetsTracker(topic)
 
       sub.request(3)
       sub.expectNextN(3)
-      co.get should be(Map(tp1 -> 0L, tp2 -> 1L))
+      co.consumedOffsets should be(Map(tp1 -> 0L, tp2 -> 1L))
     }
   }
 }
