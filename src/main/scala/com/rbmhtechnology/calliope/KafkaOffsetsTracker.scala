@@ -24,12 +24,12 @@ import org.apache.kafka.common.TopicPartition
 
 import scala.collection.immutable.Map
 
-object KafkaOffsetsTracker {
+private object KafkaOffsetsTracker {
   def apply[K, V](initialOffsets: Map[TopicPartition, Long]): Flow[ConsumerRecord[K, V], ConsumerRecord[K, V], KafkaOffsetsTracker] = {
     val currentOffsets = new AtomicReference[Map[TopicPartition, Long]](initialOffsets)
     Flow[ConsumerRecord[K, V]].map {
       cr => currentOffsets.updateAndGet(updateOffsets(_, cr))
-        cr
+      cr
     }.mapMaterializedValue(_ => new KafkaOffsetsTrackerImpl(currentOffsets))
   }
 

@@ -32,6 +32,10 @@ import scala.collection.immutable.Seq
 object KafkaSpec {
   case class ExampleEvent(eventId: String, aggregateId: String, payload: String)
 
+  implicit val aggregate = new Aggregate[ExampleEvent] {
+    override def aggregateId(event: ExampleEvent): String = event.aggregateId
+  }
+
   class EventSerialization extends Serializer[ExampleEvent] with Deserializer[ExampleEvent] {
     override def close(): Unit =
       ()

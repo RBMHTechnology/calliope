@@ -30,11 +30,11 @@ import scala.collection.immutable.Seq
 class KafkaEventsSpec extends KafkaSpec with BeforeAndAfterEach {
   import KafkaSpec._
 
-  var producer: KafkaProducer[String, ExampleEvent] = _
-
   val e1 = ExampleEvent("e1", "a1", "x")
   val e2 = ExampleEvent("e2", "a2", "y")
   val e3 = ExampleEvent("e3", "a3", "z")
+
+  var producer: KafkaProducer[String, ExampleEvent] = _
 
   override def beforeAll(): Unit = {
     super.beforeAll()
@@ -49,15 +49,15 @@ class KafkaEventsSpec extends KafkaSpec with BeforeAndAfterEach {
     super.afterAll()
   }
 
-  def endSubscriber: TestSubscriber.Probe[ExampleEvent] =
+  private def endSubscriber: TestSubscriber.Probe[ExampleEvent] =
     KafkaMetadata.endOffsets(consumerSettings(group), topic).flatMapConcat(KafkaEvents.until(consumerSettings(group), _)).map(_.value)
       .toMat(TestSink.probe[ExampleEvent])(Keep.right).run()
 
-  def untilSubscriber(offsets: Map[TopicPartition, Long]): TestSubscriber.Probe[ExampleEvent] =
+  private def untilSubscriber(offsets: Map[TopicPartition, Long]): TestSubscriber.Probe[ExampleEvent] =
     KafkaEvents.until(consumerSettings(group), offsets).map(_.value)
       .toMat(TestSink.probe[ExampleEvent])(Keep.right).run()
 
-  def offsetsTracker(topic: String): (KafkaOffsetsTracker, TestSubscriber.Probe[ExampleEvent]) =
+  private def offsetsTracker(topic: String): (KafkaOffsetsTracker, TestSubscriber.Probe[ExampleEvent]) =
     Consumer.plainSource(consumerSettings(group), Subscriptions.topics(topic))
       .viaMat(KafkaOffsetsTracker(Map.empty))(Keep.right).map(_.value)
       .toMat(TestSink.probe[ExampleEvent])(Keep.both).run()

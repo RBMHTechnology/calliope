@@ -19,63 +19,42 @@ package com.rbmhtechnology.calliope
 import akka.kafka.ConsumerMessage.CommittableMessage
 import akka.kafka.scaladsl.Consumer.Control
 import akka.kafka.scaladsl.{Consumer, Producer}
-import akka.kafka.{ConsumerSettings, ProducerSettings, Subscription, Subscriptions}
-import akka.stream.scaladsl.{Flow, Keep}
+import akka.kafka.{ConsumerSettings, ProducerSettings, Subscription}
+import akka.stream.scaladsl.{Flow, Keep, Source}
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
-import org.apache.kafka.common.TopicPartition
+
+import scala.language.higherKinds
 
 object KafkaEventLog {
-  def from[K, V](producerSettings: ProducerSettings[K, V],
-                 consumerSettings: ConsumerSettings[K, V],
-                 from: Map[TopicPartition, Long]): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], Control] =
-    apply(producerSettings, consumerSettings, Subscriptions.assignmentWithOffset(from))
+  def apply[A[_, _], K, V, M](producerSettings: ProducerSettings[K, V],
+                              source: Source[A[K, V], M]): Flow[ProducerRecord[K, V], A[K, V], M] =
+    Flow.fromSinkAndSourceMat(Producer.plainSink(producerSettings), source)(Keep.right)
 
-  def from[K, V](producer: KafkaProducer[K, V],
-                 producerSettings: ProducerSettings[K, V],
-                 consumerSettings: ConsumerSettings[K, V],
-                 from: Map[TopicPartition, Long]): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], Control] =
-    apply(producer, producerSettings, consumerSettings, Subscriptions.assignmentWithOffset(from))
+  def apply[A[_, _], K, V, M](producer: KafkaProducer[K, V],
+                              producerSettings: ProducerSettings[K, V],
+                              source: Source[A[K, V], M]): Flow[ProducerRecord[K, V], A[K, V], M] =
+    Flow.fromSinkAndSourceMat(Producer.plainSink(producerSettings), source)(Keep.right)
 
   def apply[K, V](producerSettings: ProducerSettings[K, V],
                   consumerSettings: ConsumerSettings[K, V],
-                  subscription: Subscription): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], Control] = {
-
-    val sink = Producer.plainSink(producerSettings)
-    val source = Consumer.plainSource(consumerSettings, subscription)
-
-    Flow.fromSinkAndSourceMat(sink, source)(Keep.right)
-  }
+                  subscription: Subscription): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], Control] =
+    apply(producerSettings, Consumer.plainSource(consumerSettings, subscription))
 
   def apply[K, V](producer: KafkaProducer[K, V],
                   producerSettings: ProducerSettings[K, V],
                   consumerSettings: ConsumerSettings[K, V],
-                  subscription: Subscription): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], Control] = {
-
-    val sink = Producer.plainSink(producerSettings, producer)
-    val source = Consumer.plainSource(consumerSettings, subscription)
-
-    Flow.fromSinkAndSourceMat(sink, source)(Keep.right)
-  }
+                  subscription: Subscription): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], Control] =
+    apply(producer, producerSettings, Consumer.plainSource(consumerSettings, subscription))
 
   def committable[K, V](producerSettings: ProducerSettings[K, V],
                         consumerSettings: ConsumerSettings[K, V],
-                        subscription: Subscription): Flow[ProducerRecord[K, V], CommittableMessage[K, V], Control] = {
-
-    val sink = Producer.plainSink(producerSettings)
-    val source = Consumer.committableSource(consumerSettings, subscription)
-
-    Flow.fromSinkAndSourceMat(sink, source)(Keep.right)
-  }
+                        subscription: Subscription): Flow[ProducerRecord[K, V], CommittableMessage[K, V], Control] =
+    apply(producerSettings, Consumer.committableSource(consumerSettings, subscription))
 
   def committable[K, V](producer: KafkaProducer[K, V],
                         producerSettings: ProducerSettings[K, V],
                         consumerSettings: ConsumerSettings[K, V],
-                        subscription: Subscription): Flow[ProducerRecord[K, V], CommittableMessage[K, V], Control] = {
-
-    val sink = Producer.plainSink(producerSettings, producer)
-    val source = Consumer.committableSource(consumerSettings, subscription)
-
-    Flow.fromSinkAndSourceMat(sink, source)(Keep.right)
-  }
+                        subscription: Subscription): Flow[ProducerRecord[K, V], CommittableMessage[K, V], Control] =
+    apply(producer, producerSettings, Consumer.committableSource(consumerSettings, subscription))
 }

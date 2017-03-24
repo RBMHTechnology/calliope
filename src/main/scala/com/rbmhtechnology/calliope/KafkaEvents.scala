@@ -19,14 +19,29 @@ package com.rbmhtechnology.calliope
 import akka.NotUsed
 import akka.kafka.scaladsl.Consumer
 import akka.kafka.{ConsumerSettings, Subscriptions}
-import akka.stream.scaladsl.Source
+import akka.stream.Materializer
+import akka.stream.scaladsl.{BroadcastHub, Keep, Source}
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.TopicPartition
 
 import scala.collection.immutable.Map
 
 object KafkaEvents {
-  def until[K, V](consumerSettings: ConsumerSettings[K, V], offsets: Map[TopicPartition, Long]): Source[ConsumerRecord[K, V], NotUsed] =
+  def hub[K, V: Aggregate](consumerSettings: ConsumerSettings[K, V],
+                offsets: Map[TopicPartition, Long])
+               (implicit materializer: Materializer): KafkaEventHub[K, V] = {
+    val (tracker, source) = from(consumerSettings, offsets)
+      .viaMat(KafkaOffsetsTracker(offsets))(Keep.right)
+      .toMat(BroadcastHub.sink[ConsumerRecord[K, V]])(Keep.both).run()
+    new KafkaEventHubImpl[K, V](consumerSettings, tracker, source)
+  }
+
+  def from[K, V](consumerSettings: ConsumerSettings[K, V],
+                 offsets: Map[TopicPartition, Long]): Source[ConsumerRecord[K, V], NotUsed] =
+    Consumer.plainSource(consumerSettings, Subscriptions.assignmentWithOffset(offsets)).mapMaterializedValue(_ => NotUsed)
+
+  def until[K, V](consumerSettings: ConsumerSettings[K, V],
+                  offsets: Map[TopicPartition, Long]): Source[ConsumerRecord[K, V], NotUsed] =
     KafkaMetadata.beginOffsets(consumerSettings, offsets.keySet).flatMapConcat { beginOffsets =>
       val untilOffsets = offsets.filter {
         case (k, v) => v > beginOffsets.getOrElse(k, 0L)
@@ -34,8 +49,7 @@ object KafkaEvents {
       if (untilOffsets.isEmpty)
         Source.empty[ConsumerRecord[K, V]]
       else
-        Consumer.plainSource(consumerSettings, Subscriptions.assignmentWithOffset(beginOffsets))
-          .takeWhile(untilPredicate(untilOffsets), inclusive = true)
+        from(consumerSettings, beginOffsets).takeWhile(untilPredicate(untilOffsets), inclusive = true)
     }
 
   private def untilPredicate[K, V](untilOffsets: Map[TopicPartition, Long]): ConsumerRecord[K, V] => Boolean = {
