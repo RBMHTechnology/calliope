@@ -17,7 +17,6 @@
 package com.rbmhtechnology.calliope
 
 import akka.NotUsed
-import akka.kafka.ConsumerSettings
 import akka.stream.scaladsl.{Flow, Sink, Source}
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.clients.producer.ProducerRecord
@@ -26,20 +25,15 @@ import org.apache.kafka.common.TopicPartition
 import scala.collection.immutable.Map
 
 trait KafkaEventHub[K, V] {
-  def aggregateEvents(aggregateId: String): Source[ConsumerRecord[K, V], NotUsed]
-  def aggregateEventLog(aggregateId: String, sink: Sink[ProducerRecord[K, V], _]): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], NotUsed]
+  def aggregateEvents(aggregateId: String, index: KafkaIndex[K, V]): Source[ConsumerRecord[K, V], NotUsed]
+
+  def aggregateEventLog(aggregateId: String, index: KafkaIndex[K, V], sink: Sink[ProducerRecord[K, V], _]): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], NotUsed] =
+    Flow.fromSinkAndSource(sink, aggregateEvents(aggregateId, index))
 }
 
-private class KafkaEventHubImpl[K, V: Aggregate](consumerSettings: ConsumerSettings[K, V], tracker: KafkaOffsetsTracker, source: Source[ConsumerRecord[K, V], NotUsed]) extends KafkaEventHub[K, V] {
-  def aggregateEvents(aggregateId: String): Source[ConsumerRecord[K, V], NotUsed] =
-    live(aggregateId).prepend(Source.lazily(() => past(aggregateId, tracker.consumedOffsets))).via(dedup)
-
-  def aggregateEventLog(aggregateId: String, sink: Sink[ProducerRecord[K, V], _]): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], NotUsed] =
-    Flow.fromSinkAndSource(sink, aggregateEvents(aggregateId))
-
-  /** Reads past aggregate events from Kafka. Will be later replaced by a source that reads from an aggregate index. */
-  private def past(aggregateId: String, untilOffsets: Map[TopicPartition, Long]): Source[ConsumerRecord[K, V], NotUsed] =
-    KafkaEvents.until(consumerSettings, untilOffsets).filter(cr => implicitly[Aggregate[V]].aggregateId(cr.value) == aggregateId)
+private class KafkaEventHubImpl[K, V: Aggregate](source: Source[ConsumerRecord[K, V], NotUsed], tracker: KafkaOffsetsTracker) extends KafkaEventHub[K, V] {
+  def aggregateEvents(aggregateId: String, index: KafkaIndex[K, V]): Source[ConsumerRecord[K, V], NotUsed] =
+    live(aggregateId).prepend(Source.lazily(() => index.aggregateEvents(aggregateId, tracker.consumedOffsets))).via(dedup)
 
   private def live(aggregateId: String): Source[ConsumerRecord[K, V], NotUsed] =
     source.filter(cr => implicitly[Aggregate[V]].aggregateId(cr.value) == aggregateId)

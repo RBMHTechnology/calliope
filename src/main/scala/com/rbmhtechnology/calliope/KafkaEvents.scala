@@ -31,9 +31,9 @@ object KafkaEvents {
                 offsets: Map[TopicPartition, Long])
                (implicit materializer: Materializer): KafkaEventHub[K, V] = {
     val (tracker, source) = from(consumerSettings, offsets)
-      .viaMat(KafkaOffsetsTracker(offsets))(Keep.right)
+      .viaMat(KafkaOffsetsTracker.flow(offsets))(Keep.right)
       .toMat(BroadcastHub.sink[ConsumerRecord[K, V]])(Keep.both).run()
-    new KafkaEventHubImpl[K, V](consumerSettings, tracker, source)
+    new KafkaEventHubImpl[K, V](source, tracker)
   }
 
   def from[K, V](consumerSettings: ConsumerSettings[K, V],
@@ -43,13 +43,9 @@ object KafkaEvents {
   def until[K, V](consumerSettings: ConsumerSettings[K, V],
                   offsets: Map[TopicPartition, Long]): Source[ConsumerRecord[K, V], NotUsed] =
     KafkaMetadata.beginOffsets(consumerSettings, offsets.keySet).flatMapConcat { beginOffsets =>
-      val untilOffsets = offsets.filter {
-        case (k, v) => v > beginOffsets.getOrElse(k, 0L)
-      }
-      if (untilOffsets.isEmpty)
-        Source.empty[ConsumerRecord[K, V]]
-      else
-        from(consumerSettings, beginOffsets).takeWhile(untilPredicate(untilOffsets), inclusive = true)
+      val untilOffsets = offsets.filter { case (k, v) => v > beginOffsets.getOrElse(k, 0L) }
+      if (untilOffsets.isEmpty) Source.empty[ConsumerRecord[K, V]]
+      else KafkaEvents.from(consumerSettings, beginOffsets).takeWhile(untilPredicate(untilOffsets), inclusive = true)
     }
 
   private def untilPredicate[K, V](untilOffsets: Map[TopicPartition, Long]): ConsumerRecord[K, V] => Boolean = {

@@ -36,6 +36,7 @@ class KafkaEventHubSpec extends KafkaSpec with BeforeAndAfterEach {
   val e4 = ExampleEvent("e4", "a2", "x") // offset 3
   val e5 = ExampleEvent("e5", "a1", "y") // offset 4
 
+  val index: KafkaIndex[String, ExampleEvent] = KafkaIndex.scanning(consumerSettings(group))
   var producer: KafkaProducer[String, ExampleEvent] = _
 
   override def beforeAll(): Unit = {
@@ -61,7 +62,7 @@ class KafkaEventHubSpec extends KafkaSpec with BeforeAndAfterEach {
   "An aggregate event source" must {
     "consume past and live aggregate events" in {
       val hub = eventHub(Map(tp0 -> 2L))
-      val sub = eventSubscriber(hub.aggregateEvents("a1"))
+      val sub = eventSubscriber(hub.aggregateEvents("a1", index))
 
       sub.request(3)
       sub.expectNextN(2) should be(Seq(e1, e3))

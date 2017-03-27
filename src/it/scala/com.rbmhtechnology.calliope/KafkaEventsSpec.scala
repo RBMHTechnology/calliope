@@ -59,7 +59,7 @@ class KafkaEventsSpec extends KafkaSpec with BeforeAndAfterEach {
 
   private def offsetsTracker(topic: String): (KafkaOffsetsTracker, TestSubscriber.Probe[ExampleEvent]) =
     Consumer.plainSource(consumerSettings(group), Subscriptions.topics(topic))
-      .viaMat(KafkaOffsetsTracker(Map.empty))(Keep.right).map(_.value)
+      .viaMat(KafkaOffsetsTracker.flow(Map.empty))(Keep.right).map(_.value)
       .toMat(TestSink.probe[ExampleEvent])(Keep.both).run()
 
   "An until event source" must {
