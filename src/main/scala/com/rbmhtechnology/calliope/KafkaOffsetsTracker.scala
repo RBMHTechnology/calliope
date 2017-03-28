@@ -25,7 +25,7 @@ import org.apache.kafka.common.TopicPartition
 import scala.collection.immutable.Map
 
 private class KafkaOffsetsTracker(ref: AtomicReference[Map[TopicPartition, Long]]) {
-  def consumedOffsets: Map[TopicPartition, Long] = ref.get
+  def untilOffsets: Map[TopicPartition, Long] = ref.get
 }
 
 private object KafkaOffsetsTracker {
@@ -38,6 +38,6 @@ private object KafkaOffsetsTracker {
   }
 
   private def updateOffsets[K, V](currentOffsets: Map[TopicPartition, Long], cr: ConsumerRecord[K, V]): Map[TopicPartition, Long] =
-    currentOffsets.updated(new TopicPartition(cr.topic, cr.partition), cr.offset)
+    currentOffsets.updated(new TopicPartition(cr.topic, cr.partition), cr.offset + 1L)
 }
 

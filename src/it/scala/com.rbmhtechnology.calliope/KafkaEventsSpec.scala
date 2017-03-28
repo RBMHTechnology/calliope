@@ -53,6 +53,10 @@ class KafkaEventsSpec extends KafkaSpec with BeforeAndAfterEach {
     KafkaMetadata.endOffsets(consumerSettings(group), topic).flatMapConcat(KafkaEvents.until(consumerSettings(group), _)).map(_.value)
       .toMat(TestSink.probe[ExampleEvent])(Keep.right).run()
 
+  private def toSubscriber(offsets: Map[TopicPartition, Long]): TestSubscriber.Probe[ExampleEvent] =
+    KafkaEvents.to(consumerSettings(group), offsets).map(_.value)
+      .toMat(TestSink.probe[ExampleEvent])(Keep.right).run()
+
   private def untilSubscriber(offsets: Map[TopicPartition, Long]): TestSubscriber.Probe[ExampleEvent] =
     KafkaEvents.until(consumerSettings(group), offsets).map(_.value)
       .toMat(TestSink.probe[ExampleEvent])(Keep.right).run()
@@ -74,8 +78,17 @@ class KafkaEventsSpec extends KafkaSpec with BeforeAndAfterEach {
       sub.expectNextN(3) should be(Seq(e1, e2, e3))
       sub.expectComplete()
     }
-    "emit a subset of events if given offsets are less than or equal to end offsets " in {
+    "emit a subset of events if given offsets are less than or equal to end offsets" in {
       val sub = untilSubscriber(Map(tp0 -> 0L, tp1 -> 1L, tp2 -> 1L))
+      sub.request(2)
+      sub.expectNextN(2) should be(Seq(e1, e2))
+      sub.expectComplete()
+    }
+  }
+
+  "A to event source" must {
+    "emit a events with offsets less than or equal to given offsets" in {
+      val sub = toSubscriber(Map(tp1 -> 0L, tp2 -> 0L))
       sub.request(2)
       sub.expectNextN(2) should be(Seq(e1, e2))
       sub.expectComplete()
@@ -88,7 +101,7 @@ class KafkaEventsSpec extends KafkaSpec with BeforeAndAfterEach {
 
       sub.request(3)
       sub.expectNextN(3)
-      co.consumedOffsets should be(Map(tp1 -> 0L, tp2 -> 1L))
+      co.untilOffsets should be(Map(tp1 -> 1L, tp2 -> 2L))
     }
   }
 }

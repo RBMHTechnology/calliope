@@ -33,7 +33,7 @@ trait KafkaEventHub[K, V] {
 
 private class KafkaEventHubImpl[K, V: Aggregate](source: Source[ConsumerRecord[K, V], NotUsed], tracker: KafkaOffsetsTracker) extends KafkaEventHub[K, V] {
   def aggregateEvents(aggregateId: String, index: KafkaIndex[K, V]): Source[ConsumerRecord[K, V], NotUsed] =
-    live(aggregateId).prepend(Source.lazily(() => index.aggregateEvents(aggregateId, tracker.consumedOffsets))).via(dedup)
+    live(aggregateId).prepend(Source.lazily(() => index.aggregateEvents(aggregateId, tracker.untilOffsets))).via(dedup)
 
   private def live(aggregateId: String): Source[ConsumerRecord[K, V], NotUsed] =
     source.filter(cr => implicitly[Aggregate[V]].aggregateId(cr.value) == aggregateId)

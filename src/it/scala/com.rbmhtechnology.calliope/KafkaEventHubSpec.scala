@@ -36,11 +36,12 @@ class KafkaEventHubSpec extends KafkaSpec with BeforeAndAfterEach {
   val e4 = ExampleEvent("e4", "a2", "x") // offset 3
   val e5 = ExampleEvent("e5", "a1", "y") // offset 4
 
-  val index: KafkaIndex[String, ExampleEvent] = KafkaIndex.scanning(consumerSettings(group))
+  val index: KafkaInmemIndex[String, ExampleEvent] = KafkaIndex.inmem[String, ExampleEvent](system)
   var producer: KafkaProducer[String, ExampleEvent] = _
 
   override def beforeAll(): Unit = {
     super.beforeAll()
+    index.connect(consumerSettings(group), topicPartitions.toSet)
     producer = producerSettings.createKafkaProducer()
     Seq(e1, e2, e3, e4).foreach(send)
   }
@@ -50,6 +51,7 @@ class KafkaEventHubSpec extends KafkaSpec with BeforeAndAfterEach {
 
   override def afterAll(): Unit = {
     producer.close()
+    index.shutdown()
     super.afterAll()
   }
 
