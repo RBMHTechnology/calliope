@@ -46,7 +46,7 @@ object KafkaEvents {
 
   def until[K, V](consumerSettings: ConsumerSettings[K, V],
                   untilOffsets: Map[TopicPartition, Long]): Source[ConsumerRecord[K, V], NotUsed] =
-    KafkaMetadata.beginOffsets(consumerSettings, untilOffsets.keySet).flatMapConcat { beginOffsets =>
+    KafkaMetadata.beginOffsets(consumerSettings, untilOffsets.keySet).take(1).flatMapConcat { beginOffsets =>
       val filteredOffsets = untilOffsets.filter { case (k, v) => v > beginOffsets.getOrElse(k, 0L) }
       if (filteredOffsets.isEmpty) Source.empty[ConsumerRecord[K, V]]
       else KafkaEvents.from(consumerSettings, beginOffsets).takeWhile(untilPredicate(filteredOffsets), inclusive = true)

@@ -50,7 +50,7 @@ class KafkaEventsSpec extends KafkaSpec with BeforeAndAfterEach {
   }
 
   private def endSubscriber: TestSubscriber.Probe[ExampleEvent] =
-    KafkaMetadata.endOffsets(consumerSettings(group), topic).flatMapConcat(KafkaEvents.until(consumerSettings(group), _)).map(_.value)
+    KafkaMetadata.endOffsets(consumerSettings(group), topic).take(1).flatMapConcat(KafkaEvents.until(consumerSettings(group), _)).map(_.value)
       .toMat(TestSink.probe[ExampleEvent])(Keep.right).run()
 
   private def toSubscriber(offsets: Map[TopicPartition, Long]): TestSubscriber.Probe[ExampleEvent] =

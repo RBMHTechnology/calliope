@@ -43,13 +43,13 @@ class KafkaMetadataSpec extends KafkaSpec {
   }
 
   def beginOffsetsSubscriber(topicPartitions: Set[TopicPartition]): TestSubscriber.Probe[Map[TopicPartition, Long]] =
-    KafkaMetadata.beginOffsets(consumerSettings(group), topicPartitions).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
+    KafkaMetadata.beginOffsets(consumerSettings(group), topicPartitions).take(1).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
 
   def endOffsetsSubscriber(topic: String): TestSubscriber.Probe[Map[TopicPartition, Long]] =
-    KafkaMetadata.endOffsets(consumerSettings(group), topic).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
+    KafkaMetadata.endOffsets(consumerSettings(group), topic).take(1).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
 
   def committedOffsetsSubscriber(topic: String, group: String = group): TestSubscriber.Probe[Map[TopicPartition, Long]] =
-    KafkaMetadata.committedOffsets(consumerSettings(group), topic).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
+    KafkaMetadata.committedOffsets(consumerSettings(group), topic).take(1).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
 
   "KafkaMetadata" must {
     "emit the current end offsets of given topic and then complete" in {

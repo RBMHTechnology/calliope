@@ -70,7 +70,6 @@ private class KafkaMetadata[K, V, R](consumerSettings: ConsumerSettings[K, V])(f
       setHandler(out, new OutHandler {
         override def onPull(): Unit = {
           push(out, f(consumer))
-          completeStage()
         }
       })
 
