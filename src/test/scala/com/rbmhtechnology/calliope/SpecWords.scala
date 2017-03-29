@@ -16,13 +16,11 @@
 
 package com.rbmhtechnology.calliope
 
-import akka.testkit.TestKit
-import org.scalatest.{BeforeAndAfterAll, Suite}
+import org.scalatest.WordSpecLike
 
-trait StopSystemAfterAll extends BeforeAndAfterAll { this: TestKit with Suite =>
+trait SpecWords { this: WordSpecLike =>
 
-  override protected def afterAll(): Unit = {
-    TestKit.shutdownActorSystem(system)
-    super.afterAll()
-  }
+  def invoked: AfterWord = afterWord("invoked")
+
+  def invokedWith: AfterWord = afterWord("invoked with")
 }

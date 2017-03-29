@@ -1,5 +1,6 @@
 import de.heikoseeberger.sbtheader.{AutomateHeaderPlugin, HeaderPlugin}
 import de.heikoseeberger.sbtheader.license.Apache2_0
+import sbtprotobuf.ProtobufPlugin
 
 lazy val commonSettings = Seq(
   organization := "com.rbmhtechnology",
@@ -21,16 +22,23 @@ lazy val headerSettings: Seq[Setting[_]] = {
     AutomateHeaderPlugin.automateFor(IntegrationTest)
 }
 
-lazy val dependencies = Seq(
-  "com.typesafe.akka" %% "akka-stream"              % Version.Akka ,
-  "com.typesafe.akka" %% "akka-stream-kafka"        % "0.13",
-  "org.apache.kafka"  %  "kafka-clients"            % Version.Kafka,
-  "org.apache.kafka"  %  "kafka-streams"            % Version.Kafka,
+lazy val protocSettings: Seq[Setting[_]] = ProtobufPlugin.protobufSettings ++ Seq(
+  version in ProtobufPlugin.protobufConfig := Version.Protobuf,
+  ProtobufPlugin.runProtoc in ProtobufPlugin.protobufConfig := (args => com.github.os72.protocjar.Protoc.runProtoc("-v320" +: args.toArray))
+)
 
-  "org.scalatest"     %% "scalatest"                % "3.0.1"      % "it,test",
-  "com.typesafe.akka" %% "akka-stream-testkit"      % Version.Akka % "it,test",
-  "com.typesafe.akka" %% "akka-testkit"             % Version.Akka % "it,test",
-  "net.manub"         %% "scalatest-embedded-kafka" % "0.11.0"     % "it"
+lazy val dependencies = Seq(
+  "com.typesafe.akka"   %% "akka-stream"              % Version.Akka ,
+  "com.typesafe.akka"   %% "akka-stream-kafka"        % "0.13",
+  "org.apache.kafka"    %  "kafka-clients"            % Version.Kafka,
+  "org.apache.kafka"    %  "kafka-streams"            % Version.Kafka,
+
+  "org.scalatest"       %% "scalatest"                % "3.0.1"      % "it,test",
+  "com.typesafe.akka"   %% "akka-stream-testkit"      % Version.Akka % "it,test",
+  "com.typesafe.akka"   %% "akka-testkit"             % Version.Akka % "it,test",
+  "net.manub"           %% "scalatest-embedded-kafka" % "0.11.0"     % "it",
+
+  "com.google.protobuf" % "protobuf-java"             % Version.Protobuf
 )
 
 lazy val root = (project in file("."))
@@ -38,5 +46,6 @@ lazy val root = (project in file("."))
   .settings(commonSettings: _*)
   .settings(testSettings)
   .settings(headerSettings)
+  .settings(protocSettings: _*)
   .settings(libraryDependencies ++= dependencies)
   .enablePlugins(HeaderPlugin, AutomateHeaderPlugin)

@@ -14,15 +14,16 @@
  * limitations under the License.
  */
 
-package com.rbmhtechnology.calliope
+syntax = "proto3";
 
-import akka.testkit.TestKit
-import org.scalatest.{BeforeAndAfterAll, Suite}
+option java_package = "com.rbmhtechnology.calliope.serializer";
+option optimize_for = SPEED;
 
-trait StopSystemAfterAll extends BeforeAndAfterAll { this: TestKit with Suite =>
+import "CommonFormats.proto";
 
-  override protected def afterAll(): Unit = {
-    TestKit.shutdownActorSystem(system)
-    super.afterAll()
-  }
+message SequencedMessageFormat {
+  PayloadFormat payload = 1;
+  string sourceId = 2;
+  int64 sequenceNo = 3;
+  int64 creationTimestamp = 4;
 }
