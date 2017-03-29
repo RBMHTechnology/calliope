@@ -31,12 +31,17 @@ trait KafkaEventHub[K, V] {
     Flow.fromSinkAndSource(sink, aggregateEvents(aggregateId, index))
 }
 
-private class KafkaEventHubImpl[K, V: Aggregate](source: Source[ConsumerRecord[K, V], NotUsed], tracker: KafkaOffsetsTracker) extends KafkaEventHub[K, V] {
+private class KafkaEventHubImpl[K, V: Aggregate](eventSource: Source[ConsumerRecord[K, V], NotUsed],
+                                                 eventSink: Sink[ProducerRecord[K, V], NotUsed],
+                                                 endOffsetsSource: Source[Map[TopicPartition, Long], NotUsed]) extends KafkaEventHub[K, V] {
   def aggregateEvents(aggregateId: String, index: KafkaIndex[K, V]): Source[ConsumerRecord[K, V], NotUsed] =
-    live(aggregateId).prepend(Source.lazily(() => index.aggregateEvents(aggregateId, tracker.untilOffsets))).via(dedup)
+    live(aggregateId).prepend(recovery(aggregateId, index)).via(dedup)
 
   private def live(aggregateId: String): Source[ConsumerRecord[K, V], NotUsed] =
-    source.filter(cr => implicitly[Aggregate[V]].aggregateId(cr.value) == aggregateId)
+    eventSource.filter(cr => implicitly[Aggregate[V]].aggregateId(cr.value) == aggregateId)
+
+  private def recovery(aggregateId: String, index: KafkaIndex[K, V]): Source[ConsumerRecord[K, V], NotUsed] =
+    endOffsetsSource.flatMapConcat(index.aggregateEvents(aggregateId, _))
 
   private def dedup: Flow[ConsumerRecord[K, V], ConsumerRecord[K, V], NotUsed] =
     Flow[ConsumerRecord[K, V]].filter {

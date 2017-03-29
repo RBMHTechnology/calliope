@@ -69,14 +69,11 @@ abstract class KafkaSpec extends TestKit(ActorSystem("test")) with WordSpecLike 
   val group: String = "test"
   val topic: String = "test"
 
-  val topicPartitions: Seq[TopicPartition] = Seq(
-    new TopicPartition(topic, 0),
-    new TopicPartition(topic, 1),
-    new TopicPartition(topic, 2))
+  val tp0: TopicPartition = new TopicPartition(topic, 0)
+  val tp1: TopicPartition = new TopicPartition(topic, 1)
+  val tp2: TopicPartition = new TopicPartition(topic, 2)
 
-  val tp0: TopicPartition = topicPartitions(0)
-  val tp1: TopicPartition = topicPartitions(1)
-  val tp2: TopicPartition = topicPartitions(2)
+  val topicPartitions: Set[TopicPartition] = Set(tp0, tp1, tp2)
 
   override def beforeAll(): Unit = {
     KafkaServer.start()

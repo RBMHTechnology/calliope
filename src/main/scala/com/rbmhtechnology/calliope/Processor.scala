@@ -38,9 +38,9 @@ object Processor {
 private class Processor[EVT: Event, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES]) extends GraphStage[BidiShape[REQ, EVT, EVT, RES]] {
   import Processor._
 
-  // -----------------------------------------------------------------------------------------------------------
-  // TODO: externally ensure that this processor doesn't receive commands before having recovered internal state (see also Barrier)
-  // -----------------------------------------------------------------------------------------------------------
+  // ------------------------------------------------------------------------------
+  // TODO: Delay stage completion until current command processing cycle completed
+  // ------------------------------------------------------------------------------
 
   val i1 = Inlet[REQ]("Processor.i1")
   val i2 = Inlet[EVT]("Processor.i2")

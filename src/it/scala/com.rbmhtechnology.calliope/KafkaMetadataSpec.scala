@@ -45,15 +45,15 @@ class KafkaMetadataSpec extends KafkaSpec {
   def beginOffsetsSubscriber(topicPartitions: Set[TopicPartition]): TestSubscriber.Probe[Map[TopicPartition, Long]] =
     KafkaMetadata.beginOffsets(consumerSettings(group), topicPartitions).take(1).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
 
-  def endOffsetsSubscriber(topic: String): TestSubscriber.Probe[Map[TopicPartition, Long]] =
-    KafkaMetadata.endOffsets(consumerSettings(group), topic).take(1).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
+  def endOffsetsSubscriber(topicPartitions: Set[TopicPartition]): TestSubscriber.Probe[Map[TopicPartition, Long]] =
+    KafkaMetadata.endOffsets(consumerSettings(group), topicPartitions).take(1).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
 
   def committedOffsetsSubscriber(topic: String, group: String = group): TestSubscriber.Probe[Map[TopicPartition, Long]] =
     KafkaMetadata.committedOffsets(consumerSettings(group), topic).take(1).toMat(TestSink.probe[Map[TopicPartition, Long]])(Keep.right).run()
 
   "KafkaMetadata" must {
     "emit the current end offsets of given topic and then complete" in {
-      val sub = endOffsetsSubscriber(topic)
+      val sub = endOffsetsSubscriber(topicPartitions)
       sub.request(1)
 
       val expectedOffsets = Map(tp0 -> 0L, tp1 -> 1L, tp2 -> 2L)
@@ -79,7 +79,7 @@ class KafkaMetadataSpec extends KafkaSpec {
       sub.expectComplete()
     }
     "emit the begin offsets of given topic partitions and then complete" in {
-      val sub = beginOffsetsSubscriber(topicPartitions.toSet)
+      val sub = beginOffsetsSubscriber(topicPartitions)
       sub.request(1)
 
       val expectedOffsets = Map(tp0 -> 0L, tp1 -> 0L, tp2 -> 0L)
@@ -93,7 +93,7 @@ class KafkaMetadataSpec extends KafkaSpec {
       val tp1 = new TopicPartition("none", 1)
       val tp2 = new TopicPartition("none", 2)
 
-      val sub = endOffsetsSubscriber("none")
+      val sub = endOffsetsSubscriber(Set(tp0, tp1, tp2))
       sub.request(1)
 
       val expectedOffsets = Map(tp0 -> 0L, tp1 -> 0L, tp2 -> 0L)

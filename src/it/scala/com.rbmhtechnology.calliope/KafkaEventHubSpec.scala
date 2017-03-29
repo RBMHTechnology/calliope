@@ -41,7 +41,7 @@ class KafkaEventHubSpec extends KafkaSpec with BeforeAndAfterEach {
 
   override def beforeAll(): Unit = {
     super.beforeAll()
-    index.connect(consumerSettings(group), topicPartitions.toSet)
+    index.connect(consumerSettings(group), topicPartitions)
     producer = producerSettings.createKafkaProducer()
     Seq(e1, e2, e3, e4).foreach(send)
   }
@@ -55,15 +55,15 @@ class KafkaEventHubSpec extends KafkaSpec with BeforeAndAfterEach {
     super.afterAll()
   }
 
-  def eventHub(offsets: Map[TopicPartition, Long]): KafkaEventHub[String, ExampleEvent] =
-    KafkaEvents.hub(consumerSettings(group), offsets)
+  def eventHub(topicPartitions: Set[TopicPartition]): KafkaEventHub[String, ExampleEvent] =
+    KafkaEvents.hub(consumerSettings(group), producerSettings, topicPartitions)
 
   def eventSubscriber(source: Source[ConsumerRecord[String, ExampleEvent], NotUsed]): TestSubscriber.Probe[ExampleEvent] =
     source.map(_.value).toMat(TestSink.probe[ExampleEvent])(Keep.right).run()
 
   "An aggregate event source" must {
     "consume past and live aggregate events" in {
-      val hub = eventHub(Map(tp0 -> 2L))
+      val hub = eventHub(Set(tp0))
       val sub = eventSubscriber(hub.aggregateEvents("a1", index))
 
       sub.request(3)

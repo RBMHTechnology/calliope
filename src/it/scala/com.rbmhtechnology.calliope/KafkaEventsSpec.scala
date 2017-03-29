@@ -16,8 +16,6 @@
 
 package com.rbmhtechnology.calliope
 
-import akka.kafka.Subscriptions
-import akka.kafka.scaladsl.Consumer
 import akka.stream.scaladsl.Keep
 import akka.stream.testkit.TestSubscriber
 import akka.stream.testkit.scaladsl.TestSink
@@ -50,7 +48,7 @@ class KafkaEventsSpec extends KafkaSpec with BeforeAndAfterEach {
   }
 
   private def endSubscriber: TestSubscriber.Probe[ExampleEvent] =
-    KafkaMetadata.endOffsets(consumerSettings(group), topic).take(1).flatMapConcat(KafkaEvents.until(consumerSettings(group), _)).map(_.value)
+    KafkaMetadata.endOffsets(consumerSettings(group), topicPartitions).take(1).flatMapConcat(KafkaEvents.until(consumerSettings(group), _)).map(_.value)
       .toMat(TestSink.probe[ExampleEvent])(Keep.right).run()
 
   private def toSubscriber(offsets: Map[TopicPartition, Long]): TestSubscriber.Probe[ExampleEvent] =
@@ -60,11 +58,6 @@ class KafkaEventsSpec extends KafkaSpec with BeforeAndAfterEach {
   private def untilSubscriber(offsets: Map[TopicPartition, Long]): TestSubscriber.Probe[ExampleEvent] =
     KafkaEvents.until(consumerSettings(group), offsets).map(_.value)
       .toMat(TestSink.probe[ExampleEvent])(Keep.right).run()
-
-  private def offsetsTracker(topic: String): (KafkaOffsetsTracker, TestSubscriber.Probe[ExampleEvent]) =
-    Consumer.plainSource(consumerSettings(group), Subscriptions.topics(topic))
-      .viaMat(KafkaOffsetsTracker.flow(Map.empty))(Keep.right).map(_.value)
-      .toMat(TestSink.probe[ExampleEvent])(Keep.both).run()
 
   "An until event source" must {
     "complete immediately if given offsets are not greater than begin offsets" in {
@@ -92,16 +85,6 @@ class KafkaEventsSpec extends KafkaSpec with BeforeAndAfterEach {
       sub.request(2)
       sub.expectNextN(2) should be(Seq(e1, e2))
       sub.expectComplete()
-    }
-  }
-
-  "An offsets tracker" must {
-    "provide consumed offsets at runtime" in {
-      val (co, sub) = offsetsTracker(topic)
-
-      sub.request(3)
-      sub.expectNextN(3)
-      co.untilOffsets should be(Map(tp1 -> 1L, tp2 -> 2L))
     }
   }
 }

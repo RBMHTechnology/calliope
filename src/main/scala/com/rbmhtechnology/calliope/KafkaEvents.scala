@@ -17,23 +17,30 @@
 package com.rbmhtechnology.calliope
 
 import akka.NotUsed
-import akka.kafka.scaladsl.Consumer
-import akka.kafka.{ConsumerSettings, Subscriptions}
+import akka.kafka.scaladsl.{Consumer, Producer}
+import akka.kafka.{ConsumerSettings, ProducerSettings, Subscriptions}
 import akka.stream.Materializer
-import akka.stream.scaladsl.{BroadcastHub, Keep, Source}
+import akka.stream.scaladsl.{BroadcastHub, Keep, MergeHub, Sink, Source}
 import org.apache.kafka.clients.consumer.ConsumerRecord
+import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.common.TopicPartition
 
 import scala.collection.immutable.Map
 
 object KafkaEvents {
   def hub[K, V: Aggregate](consumerSettings: ConsumerSettings[K, V],
-                           fromOffsets: Map[TopicPartition, Long])
+                           producerSettings: ProducerSettings[K, V],
+                           topicPartitions: Set[TopicPartition])
                           (implicit materializer: Materializer): KafkaEventHub[K, V] = {
-    val (tracker, source) = from(consumerSettings, fromOffsets)
-      .viaMat(KafkaOffsetsTracker.flow(fromOffsets))(Keep.right)
-      .toMat(BroadcastHub.sink[ConsumerRecord[K, V]])(Keep.both).run()
-    new KafkaEventHubImpl[K, V](source, tracker)
+    val endOffsetsQueue = KafkaMetadata.endOffsets(consumerSettings, topicPartitions)
+      .toMat(Sink.queue())(Keep.right).run()
+    val endOffsetsSource = Source.lazily(() => Source.fromFuture(endOffsetsQueue.pull()))
+      .map(_.getOrElse(throw new Exception("end offsets unavailable"))).mapMaterializedValue(_ => NotUsed)
+    val eventSource = endOffsetsSource.flatMapConcat(endOffsets => from(consumerSettings, endOffsets))
+      .toMat(BroadcastHub.sink[ConsumerRecord[K, V]])(Keep.right).run()
+    val eventSink = MergeHub.source[ProducerRecord[K, V]]
+      .toMat(Producer.plainSink(producerSettings))(Keep.left).run()
+    new KafkaEventHubImpl[K, V](eventSource, eventSink, endOffsetsSource)
   }
 
   def from[K, V](consumerSettings: ConsumerSettings[K, V],
