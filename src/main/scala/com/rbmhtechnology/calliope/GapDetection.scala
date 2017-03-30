@@ -21,20 +21,6 @@ import java.time.Instant
 import scala.concurrent.duration.FiniteDuration
 
 /**
-  * Type class for elements that contain sequence numbers.
-  */
-trait Sequenced[A] {
-  def sequenceNr(event: A): Long
-}
-
-/**
-  * Type class for elements that contain timestamps.
-  */
-trait Timestamped[A] {
-  def timestamp(event: A): Instant
-}
-
-/**
   * A gap-detection filters all events containing successive sequence numbers up to the first gap found in those sequence numbers.
   *
   * If a gap is older than the given persistence timeout, the gap will be persisted and the next event will be included in the result set.
