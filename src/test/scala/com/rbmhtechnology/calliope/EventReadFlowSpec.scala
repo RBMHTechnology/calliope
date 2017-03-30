@@ -18,10 +18,7 @@ package com.rbmhtechnology.calliope
 
 import akka.NotUsed
 import akka.actor.ActorSystem
-import akka.stream.ActorMaterializer
-import akka.stream.scaladsl.{Flow, Keep}
-import akka.stream.testkit.scaladsl.{TestSink, TestSource}
-import akka.stream.testkit.{TestPublisher, TestSubscriber}
+import akka.stream.scaladsl.Flow
 import akka.testkit.TestKit
 import org.scalatest.{MustMatchers, WordSpecLike}
 
@@ -29,23 +26,19 @@ import scala.collection.immutable._
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
-class EventReadFlowSpec extends TestKit(ActorSystem("test")) with WordSpecLike with MustMatchers with StopSystemAfterAll {
+class EventReadFlowSpec extends TestKit(ActorSystem("test")) with WordSpecLike with MustMatchers with StreamSpec with FlowSpec {
   import EventRecords._
   import TestEventReader.Extensions._
 
-  implicit val materializer = ActorMaterializer()
   implicit val eventReader = TestEventReader()
 
-  def runFlow(flow: Flow[Unit, EventRecord[String], NotUsed]): (TestPublisher.Probe[Unit], TestSubscriber.Probe[EventRecord[String]]) =
-    TestSource.probe[Unit]
-      .via(flow)
-      .toMat(TestSink.probe)(Keep.both)
-      .run()
+  def eventReadFlow(reader: TestEventReader, bufferSize: Int): Flow[Unit, EventRecord[String], NotUsed] =
+    EventReadFlow[Unit, String](reader, bufferSize)
 
   "An EventReadFlow" when {
     "elements demanded from downstream" must {
       "fetch and push elements from the event reader" in {
-        val (pub, sub) = runFlow(EventReadFlow(eventReader, 5))
+        val (pub, sub) = runFlow(eventReadFlow(eventReader, 5))
 
         sub.request(1)
 
@@ -54,7 +47,7 @@ class EventReadFlowSpec extends TestKit(ActorSystem("test")) with WordSpecLike w
         sub.expectNext(eventRecord(1))
       }
       "push records from buffer" in {
-        val (pub, sub) = runFlow(EventReadFlow(eventReader, 5))
+        val (pub, sub) = runFlow(eventReadFlow(eventReader, 5))
 
         sub.request(5)
 
@@ -63,7 +56,7 @@ class EventReadFlowSpec extends TestKit(ActorSystem("test")) with WordSpecLike w
         sub.expectNextN(eventRecords(1, 5))
       }
       "fetch the next sequence of records from the event reader when buffer is empty" in {
-        val (pub, sub) = runFlow(EventReadFlow(eventReader, 5))
+        val (pub, sub) = runFlow(eventReadFlow(eventReader, 5))
 
         sub.request(10)
 
@@ -73,7 +66,7 @@ class EventReadFlowSpec extends TestKit(ActorSystem("test")) with WordSpecLike w
         sub.expectNextN(eventRecords(1, 10))
       }
       "apply buffer size to the result of the event reader" in {
-        val (pub, sub) = runFlow(EventReadFlow(eventReader, 5))
+        val (pub, sub) = runFlow(eventReadFlow(eventReader, 5))
 
         sub.request(10)
 
@@ -85,7 +78,7 @@ class EventReadFlowSpec extends TestKit(ActorSystem("test")) with WordSpecLike w
     }
     "downstream demand cannot be fulfilled" must {
       "not push elements if event reader is empty" in {
-        val (pub, sub) = runFlow(EventReadFlow(eventReader, 10))
+        val (pub, sub) = runFlow(eventReadFlow(eventReader, 10))
 
 
         sub.request(1)
@@ -96,7 +89,7 @@ class EventReadFlowSpec extends TestKit(ActorSystem("test")) with WordSpecLike w
         sub.expectNoMsg(1.second)
       }
       "stop pushing elements once the event reader is empty" in {
-        val (pub, sub) = runFlow(EventReadFlow(eventReader, 5))
+        val (pub, sub) = runFlow(eventReadFlow(eventReader, 5))
 
 
         sub.request(10)
@@ -112,7 +105,7 @@ class EventReadFlowSpec extends TestKit(ActorSystem("test")) with WordSpecLike w
         sub.expectNoMsg(1.second)
       }
       "fetch data from the event reader on upstream emission" in {
-        val (pub, sub) = runFlow(EventReadFlow(eventReader, 5))
+        val (pub, sub) = runFlow(eventReadFlow(eventReader, 5))
 
         eventReader.setResult(1L -> Success(Seq.empty))
         sub.request(1)
@@ -123,7 +116,7 @@ class EventReadFlowSpec extends TestKit(ActorSystem("test")) with WordSpecLike w
         sub.expectNext(eventRecord(1))
       }
       "fetch data from the event reader for each upstream emission until data available" in {
-        val (pub, sub) = runFlow(EventReadFlow(eventReader, 5))
+        val (pub, sub) = runFlow(eventReadFlow(eventReader, 5))
 
         sub.request(10)
 
@@ -145,7 +138,7 @@ class EventReadFlowSpec extends TestKit(ActorSystem("test")) with WordSpecLike w
         sub.expectNextN(eventRecords(9, 10))
       }
       "ignore upstream emissions until demand is propagated from downstream" in {
-        val (pub, sub) = runFlow(EventReadFlow(eventReader, 5))
+        val (pub, sub) = runFlow(eventReadFlow(eventReader, 5))
 
         eventReader.setResult(1L -> Failure(new RuntimeException("should not be called yet")))
         pub.sendNext(Unit)
@@ -164,7 +157,7 @@ class EventReadFlowSpec extends TestKit(ActorSystem("test")) with WordSpecLike w
   }
   "event reader call fails" must {
     "fail the flow stage" in {
-      val (pub, sub) = runFlow(EventReadFlow(eventReader, 5))
+      val (pub, sub) = runFlow(eventReadFlow(eventReader, 5))
 
       sub.request(1)
 

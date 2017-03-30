@@ -17,10 +17,6 @@
 package com.rbmhtechnology.calliope
 
 import akka.actor.ActorSystem
-import akka.stream.ActorMaterializer
-import akka.stream.scaladsl.{Keep, Source, SourceQueueWithComplete}
-import akka.stream.testkit.TestSubscriber
-import akka.stream.testkit.scaladsl.TestSink
 import akka.testkit.TestKit
 import org.scalatest.{MustMatchers, WordSpecLike}
 
@@ -28,14 +24,10 @@ import scala.collection.immutable.Seq
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
-class EventSourceSpec extends TestKit(ActorSystem("test")) with WordSpecLike with MustMatchers with StopSystemAfterAll {
+class EventSourceSpec extends TestKit(ActorSystem("test")) with WordSpecLike with MustMatchers with StreamSpec with SourceSpec {
   import EventRecords._
 
-  implicit val materializer = ActorMaterializer()
   val eventReader = TestEventReader()
-
-  def runSource(source: Source[EventRecord[String], SourceQueueWithComplete[Unit]]): (SourceQueueWithComplete[Unit], TestSubscriber.Probe[EventRecord[String]]) =
-    source.toMat(TestSink.probe)(Keep.both).run()
 
   "An EventSource" when {
     "elements demanded from downstream" must {
