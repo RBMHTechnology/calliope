@@ -18,7 +18,9 @@ package com.rbmhtechnology.calliope
 
 import java.time.Instant
 
-case class EventRecord[A](sourceId: String, sequenceNr: Long, creationTimestamp: Instant, topic: String, aggregateId: String, event: A)
+import com.rbmhtechnology.calliope.ProducerFlow.Producible
+
+case class EventRecord[A](payload: A, sourceId: String, sequenceNr: Long, creationTimestamp: Instant, topic: String, aggregateId: String)
 
 object EventRecord {
 
@@ -27,4 +29,18 @@ object EventRecord {
 
   implicit def timestamped[A]: Timestamped[EventRecord[A]] =
     (event: EventRecord[A]) => event.creationTimestamp
+
+  implicit def producible[A] = new Producible[EventRecord[A], String, SequencedEvent[A]] {
+    override def topic(event: EventRecord[A]): String =
+      event.topic
+
+    override def key(event: EventRecord[A]): String =
+      event.aggregateId
+
+    override def value(event: EventRecord[A]): SequencedEvent[A] =
+      SequencedEvent(event.payload, event.sourceId, event.sequenceNr, event.creationTimestamp)
+
+    override def timestamp(event: EventRecord[A]): Option[Long] =
+      Some(event.creationTimestamp.toEpochMilli)
+  }
 }

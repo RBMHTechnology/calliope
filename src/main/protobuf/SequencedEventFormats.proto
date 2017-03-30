@@ -14,6 +14,16 @@
  * limitations under the License.
  */
 
-package com.rbmhtechnology.calliope
+syntax = "proto3";
 
-case class SequencedMessage[A](payload: A, sourceId: String, sequenceNo: Long, creationTimestamp: Long)
+option java_package = "com.rbmhtechnology.calliope.serializer";
+option optimize_for = SPEED;
+
+import "CommonFormats.proto";
+
+message SequencedEventFormat {
+  PayloadFormat payload = 1;
+  string sourceId = 2;
+  int64 sequenceNr = 3;
+  int64 creationTimestamp = 4;
+}

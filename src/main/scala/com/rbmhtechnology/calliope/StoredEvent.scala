@@ -18,13 +18,4 @@ package com.rbmhtechnology.calliope
 
 import java.time.Instant
 
-import scala.collection.immutable.Seq
-
-object EventRecords {
-
-  def eventRecord(sequenceNr: Long): EventRecord[String] =
-    EventRecord(s"payload-$sequenceNr", "test-source", sequenceNr, Instant.ofEpochMilli(sequenceNr * 100), "topic", s"aggregate-$sequenceNr")
-
-  def eventRecords(fromSnr: Long, toSnr: Long): Seq[EventRecord[String]] =
-    (fromSnr to toSnr).map(eventRecord)
-}
+case class StoredEvent(payload: Array[Byte], sequenceNr: Long, creationTimestamp: Instant, topic: String, aggregateId: String)

@@ -28,17 +28,18 @@ lazy val protocSettings: Seq[Setting[_]] = ProtobufPlugin.protobufSettings ++ Se
 )
 
 lazy val dependencies = Seq(
-  "com.typesafe.akka"   %% "akka-stream"              % Version.Akka ,
-  "com.typesafe.akka"   %% "akka-stream-kafka"        % "0.13",
-  "org.apache.kafka"    %  "kafka-clients"            % Version.Kafka,
-  "org.apache.kafka"    %  "kafka-streams"            % Version.Kafka,
+  "com.typesafe.akka"       %% "akka-stream"              % Version.Akka ,
+  "com.typesafe.akka"       %% "akka-stream-kafka"        % "0.13",
+  "org.apache.kafka"        %  "kafka-clients"            % Version.Kafka,
+  "org.apache.kafka"        %  "kafka-streams"            % Version.Kafka,
+  "org.scala-lang.modules"  %  "scala-java8-compat_2.12"  % "0.8.0",
 
-  "org.scalatest"       %% "scalatest"                % "3.0.1"      % "it,test",
-  "com.typesafe.akka"   %% "akka-stream-testkit"      % Version.Akka % "it,test",
-  "com.typesafe.akka"   %% "akka-testkit"             % Version.Akka % "it,test",
-  "net.manub"           %% "scalatest-embedded-kafka" % "0.11.0"     % "it",
+  "org.scalatest"           %% "scalatest"                % "3.0.1"      % "it,test",
+  "com.typesafe.akka"       %% "akka-stream-testkit"      % Version.Akka % "it,test",
+  "com.typesafe.akka"       %% "akka-testkit"             % Version.Akka % "it,test",
+  "net.manub"               %% "scalatest-embedded-kafka" % "0.11.0"     % "it",
 
-  "com.google.protobuf" % "protobuf-java"             % Version.Protobuf
+  "com.google.protobuf"     % "protobuf-java"             % Version.Protobuf
 )
 
 lazy val root = (project in file("."))

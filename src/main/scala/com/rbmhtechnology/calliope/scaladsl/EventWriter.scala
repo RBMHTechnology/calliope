@@ -14,17 +14,25 @@
  * limitations under the License.
  */
 
-package com.rbmhtechnology.calliope
+package com.rbmhtechnology.calliope.scaladsl
 
-import java.time.Instant
+import com.rbmhtechnology.calliope.Aggregate
 
-import scala.collection.immutable.Seq
+trait EventWriter[A] {
 
-object EventRecords {
+  protected def defaultTopic: String
 
-  def eventRecord(sequenceNr: Long): EventRecord[String] =
-    EventRecord(s"payload-$sequenceNr", "test-source", sequenceNr, Instant.ofEpochMilli(sequenceNr * 100), "topic", s"aggregate-$sequenceNr")
+  def writeEventToTopic(event: A, aggregateId: String, topic: String): Unit
 
-  def eventRecords(fromSnr: Long, toSnr: Long): Seq[EventRecord[String]] =
-    (fromSnr to toSnr).map(eventRecord)
+  def writeEvent(event: A, aggregateId: String): Unit = {
+    writeEventToTopic(event, aggregateId, defaultTopic)
+  }
+
+  def writeEventToTopic(event: A, topic: String)(implicit aggregate: Aggregate[A]): Unit = {
+    writeEventToTopic(event, aggregate.aggregateId(event), topic)
+  }
+
+  def writeEvent(event: A)(implicit aggregate: Aggregate[A]): Unit = {
+    writeEventToTopic(event, aggregate.aggregateId(event), defaultTopic)
+  }
 }

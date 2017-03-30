@@ -16,15 +16,21 @@
 
 package com.rbmhtechnology.calliope
 
-import java.time.Instant
+import akka.actor.Status.{Failure => ActorFailure}
+import akka.testkit.TestProbe
 
-import scala.collection.immutable.Seq
+import scala.util.{Failure, Success, Try}
 
-object EventRecords {
+object TestProbeExtensions {
 
-  def eventRecord(sequenceNr: Long): EventRecord[String] =
-    EventRecord(s"payload-$sequenceNr", "test-source", sequenceNr, Instant.ofEpochMilli(sequenceNr * 100), "topic", s"aggregate-$sequenceNr")
-
-  def eventRecords(fromSnr: Long, toSnr: Long): Seq[EventRecord[String]] =
-    (fromSnr to toSnr).map(eventRecord)
+  implicit class ExtendedTestProbe(probe: TestProbe) {
+    def expectNextAndReply[A, B](expected: A, reply: Try[B]): Unit = {
+      probe.expectMsg(expected)
+      val r = reply match {
+        case Failure(err) => ActorFailure(err)
+        case Success(suc) => suc
+      }
+      probe.reply(r)
+    }
+  }
 }

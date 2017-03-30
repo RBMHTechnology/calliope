@@ -16,23 +16,18 @@
 
 package com.rbmhtechnology
 
-import akka.actor.Status.{Failure => ActorFailure}
-import akka.testkit.TestProbe
-
-import scala.util.{Failure, Success, Try}
+import org.scalactic.Equality
 
 package object calliope {
 
-  object TestProbeExtensions {
+  object CustomSequencedEventEquality{
 
-    implicit class ExtendedTestProbe(probe: TestProbe) {
-      def expectNextAndReply[A, B](expected: A, reply: Try[B]): Unit = {
-        probe.expectMsg(expected)
-        val r = reply match {
-          case Failure(err) => ActorFailure(err)
-          case Success(suc) => suc
+    implicit def timestampIgnoringSequencedEventEquality[A] = new Equality[SequencedEvent[A]] {
+      override def areEqual(a: SequencedEvent[A], b: Any): Boolean = {
+        b match {
+          case o: SequencedEvent[_] => a.sourceId == o.sourceId && a.sequenceNr == o.sequenceNr && a.payload == o.payload
+          case _ => false
         }
-        probe.reply(r)
       }
     }
   }

@@ -16,53 +16,55 @@
 
 package com.rbmhtechnology.calliope.serializer
 
+import java.time.Instant
+
 import akka.actor.ExtendedActorSystem
 import akka.serialization.SerializerWithStringManifest
-import com.rbmhtechnology.calliope.SequencedMessage
-import com.rbmhtechnology.calliope.serializer.SequencedMessageFormats.SequencedMessageFormat
+import com.rbmhtechnology.calliope.SequencedEvent
+import com.rbmhtechnology.calliope.serializer.SequencedEventFormats.SequencedEventFormat
 
-class DelegatingSequencedMessageSerializer(system: ExtendedActorSystem)
-  extends SequencedMessageSerializer(system, DelegatingStringManifestPayloadSerializer(system))
+class DelegatingSequencedEventSerializer(system: ExtendedActorSystem)
+  extends SequencedEventSerializer(system, DelegatingStringManifestPayloadSerializer(system))
 
-object SequencedMessageSerializer {
-  val SequencedMessageManifest = "com.rbmhtechnology.calliope.v1.SequencedMessageManifest"
+object SequencedEventSerializer {
+  val SequencedEventManifest = "com.rbmhtechnology.calliope.v1.SequencedEventManifest"
 }
 
-abstract class SequencedMessageSerializer(system: ExtendedActorSystem, payloadSerializer: PayloadSerializer) extends SerializerWithStringManifest {
-  import SequencedMessageSerializer._
+abstract class SequencedEventSerializer(system: ExtendedActorSystem, payloadSerializer: PayloadSerializer) extends SerializerWithStringManifest {
+  import SequencedEventSerializer._
 
   override def identifier: Int = 996248934
 
-  override def manifest(o: AnyRef): String = SequencedMessageManifest
+  override def manifest(o: AnyRef): String = SequencedEventManifest
 
   override def toBinary(obj: AnyRef): Array[Byte] = obj match {
-    case s: SequencedMessage[_] =>
-      sequencedMessageFormatBuilder(s).build().toByteArray
+    case s: SequencedEvent[_] =>
+      sequencedEventFormatBuilder(s).build().toByteArray
     case _ =>
       throw new IllegalArgumentException(s"Serialization of objects for type '${obj.getClass}' is not supported")
   }
 
   override def fromBinary(bytes: Array[Byte], manifest: String): AnyRef = manifest match {
-    case SequencedMessageManifest =>
-      sequencedMessage(SequencedMessageFormat.parseFrom(bytes))
+    case SequencedEventManifest =>
+      sequencedEvent(SequencedEventFormat.parseFrom(bytes))
     case "" =>
       throw new IllegalArgumentException(s"Deserialization with empty manifest is not supported")
     case _ =>
       throw new IllegalArgumentException(s"Deserialization of objects with manifest '$manifest' is not supported")
   }
 
-  def sequencedMessageFormatBuilder(sequencedEvent: SequencedMessage[_]): SequencedMessageFormat.Builder =
-    SequencedMessageFormat.newBuilder()
+  def sequencedEventFormatBuilder(sequencedEvent: SequencedEvent[_]): SequencedEventFormat.Builder =
+    SequencedEventFormat.newBuilder()
       .setPayload(payloadSerializer.payloadFormatBuilder(sequencedEvent.payload.asInstanceOf[AnyRef]))
       .setSourceId(sequencedEvent.sourceId)
-      .setSequenceNo(sequencedEvent.sequenceNo)
-      .setCreationTimestamp(sequencedEvent.creationTimestamp)
+      .setSequenceNr(sequencedEvent.sequenceNr)
+      .setCreationTimestamp(sequencedEvent.creationTimestamp.toEpochMilli)
 
-  def sequencedMessage(format: SequencedMessageFormat): SequencedMessage[_] =
-    SequencedMessage(
+  def sequencedEvent(format: SequencedEventFormat): SequencedEvent[_] =
+    SequencedEvent(
       payloadSerializer.payload(format.getPayload),
       format.getSourceId,
-      format.getSequenceNo,
-      format.getCreationTimestamp
+      format.getSequenceNr,
+      Instant.ofEpochMilli(format.getCreationTimestamp)
     )
 }
