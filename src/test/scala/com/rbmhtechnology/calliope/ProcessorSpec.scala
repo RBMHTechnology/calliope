@@ -26,6 +26,7 @@ import akka.testkit.TestKit
 import org.scalatest._
 
 import scala.collection.immutable.Seq
+import scala.concurrent.duration._
 
 object ProcessorSpec {
   case class ExampleEvent(id: String, increment: String)
@@ -59,24 +60,27 @@ class ProcessorSpec extends TestKit(ActorSystem("test")) with WordSpecLike with 
     TestKit.shutdownActorSystem(system)
   }
 
-  def processorProbes(processor: BidiFlow[ExampleRequest, ExampleEvent, ExampleEvent, ExampleReply, NotUsed]): (TestPublisher.Probe[ExampleRequest], TestSubscriber.Probe[ExampleReply], TestPublisher.Probe[ExampleEvent], TestSubscriber.Probe[ExampleEvent]) =
-    TestSource.probe[ExampleRequest].viaMat(processor.joinMat(log)(Keep.right))(Keep.both).toMat(TestSink.probe[ExampleReply])(Keep.both).mapMaterializedValue { case ((rpub, (esub, epub)), rsub) => (rpub, rsub, epub, esub) }.run()
-
   def commandProbes(commandProcessor: Flow[ExampleRequest, ExampleReply, NotUsed]): (TestPublisher.Probe[ExampleRequest], TestSubscriber.Probe[ExampleReply]) =
     TestSource.probe[ExampleRequest].via(commandProcessor).toMat(TestSink.probe[ExampleReply])(Keep.both).run()
 
-  def processor: BidiFlow[ExampleRequest, ExampleEvent, ExampleEvent, ExampleReply, NotUsed] =
+  def processorProbes[I1, O1, I2, O2](processor: BidiFlow[I1, O1, I2, O2, NotUsed]): (TestPublisher.Probe[I1], TestSubscriber.Probe[O2], TestPublisher.Probe[I2], TestSubscriber.Probe[O1]) =
+    TestSource.probe[I1].viaMat(processor.joinMat(log[O1, I2])(Keep.right))(Keep.both).toMat(TestSink.probe[O2])(Keep.both).mapMaterializedValue { case ((rpub, (esub, epub)), rsub) => (rpub, rsub, epub, esub) }.run()
+
+  def recoveredProcessor: BidiFlow[ExampleRequest, ExampleEvent, ExampleEvent, ExampleReply, NotUsed] =
+    unrecoveredProcessor.atop(BidiFlow.fromFlows(Flow[ExampleEvent], Flow[ExampleEvent].map(Processor.Delivery(_)).prepend(Source.single(Processor.Recovered))))
+
+  def unrecoveredProcessor: BidiFlow[ExampleRequest, ExampleEvent, Processor.Control[ExampleEvent], ExampleReply, NotUsed] =
     BidiFlow.fromGraph(Processor(logic))
 
   def log(entries: Seq[ExampleEvent]): Flow[ExampleEvent, ExampleEvent, NotUsed] =
     Flow[ExampleEvent].prepend(Source(entries))
 
-  def log: Flow[ExampleEvent, ExampleEvent, ((TestSubscriber.Probe[ExampleEvent], TestPublisher.Probe[ExampleEvent]))] =
-    Flow.fromSinkAndSourceMat(TestSink.probe[ExampleEvent], TestSource.probe[ExampleEvent])(Keep.both)
+  def log[I1, O1]: Flow[I1, O1, (TestSubscriber.Probe[I1], TestPublisher.Probe[O1])] =
+    Flow.fromSinkAndSourceMat(TestSink.probe[I1], TestSource.probe[O1])(Keep.both)
 
   "A processor" must {
     "process query requests" in {
-      val (pub, sub) = commandProbes(processor.join(log(Nil)))
+      val (pub, sub) = commandProbes(recoveredProcessor.join(log(Nil)))
 
       sub.request(1)
 
@@ -84,7 +88,7 @@ class ProcessorSpec extends TestKit(ActorSystem("test")) with WordSpecLike with 
       sub.expectNext(ExampleReply("1", Seq()))
     }
     "process update requests" in {
-      val (pub, sub) = commandProbes(processor.join(log(Nil)))
+      val (pub, sub) = commandProbes(recoveredProcessor.join(log(Nil)))
 
       sub.request(2)
 
@@ -95,7 +99,7 @@ class ProcessorSpec extends TestKit(ActorSystem("test")) with WordSpecLike with 
       sub.expectNext(ExampleReply("2", Seq("foo", "bar")))
     }
     "not process requests while another request is currently processed" in {
-      val (rpub, rsub, epub, esub) = processorProbes(processor)
+      val (rpub, rsub, epub, esub) = processorProbes(recoveredProcessor)
 
       rsub.request(3)
       esub.request(3)
@@ -110,7 +114,7 @@ class ProcessorSpec extends TestKit(ActorSystem("test")) with WordSpecLike with 
       rsub.expectNext(ExampleReply("2", Seq("foo")))
     }
     "recover initial state from logged events" in {
-      val (rpub, rsub, epub, esub) = processorProbes(processor)
+      val (rpub, rsub, epub, esub) = processorProbes(recoveredProcessor)
 
       epub.sendNext(ExampleEvent("1", "foo"))
       epub.sendNext(ExampleEvent("2", "bar"))
@@ -120,6 +124,20 @@ class ProcessorSpec extends TestKit(ActorSystem("test")) with WordSpecLike with 
 
       rpub.sendNext(ExampleRequest("3", "get"))
       rsub.expectNext(ExampleReply("3", Seq("foo", "bar")))
+    }
+    "only request commands after recovery" in {
+      val (rpub, rsub, epub, esub) = processorProbes(unrecoveredProcessor)
+
+      rsub.request(1)
+      esub.request(1)
+
+      rpub.sendNext(ExampleRequest("3", "baz"))
+      epub.sendNext(Processor.Delivery(ExampleEvent("1", "foo")))
+      esub.expectNoMsg(100.millis)
+      epub.sendNext(Processor.Delivery(ExampleEvent("2", "bar")))
+      esub.expectNoMsg(100.millis)
+      epub.sendNext(Processor.Recovered)
+      esub.expectNext(ExampleEvent("3", "baz"))
     }
   }
 }

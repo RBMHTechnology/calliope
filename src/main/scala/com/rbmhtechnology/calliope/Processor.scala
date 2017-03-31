@@ -29,13 +29,17 @@ trait ProcessorLogic[EVT, REQ, RES] {
 }
 
 object Processor {
+  sealed trait Control[+EVT]
+  case object Recovered extends Control[Nothing]
+  case class Delivery[EVT](event: EVT) extends Control[EVT]
+
   private case class Cycle[EVT, RES](events: Seq[EVT], reply: () => RES)
 
-  def apply[EVT: Event, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES]): BidiFlow[REQ, EVT, EVT, RES, NotUsed] =
+  def apply[EVT: Event, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES]): BidiFlow[REQ, EVT, Processor.Control[EVT], RES, NotUsed] =
     BidiFlow.fromGraph(new Processor(logic))
 }
 
-private class Processor[EVT: Event, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES]) extends GraphStage[BidiShape[REQ, EVT, EVT, RES]] {
+private class Processor[EVT: Event, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES]) extends GraphStage[BidiShape[REQ, EVT, Processor.Control[EVT], RES]] {
   import Processor._
 
   // ------------------------------------------------------------------------------
@@ -43,7 +47,7 @@ private class Processor[EVT: Event, REQ, RES](logic: ProcessorLogic[EVT, REQ, RE
   // ------------------------------------------------------------------------------
 
   val i1 = Inlet[REQ]("Processor.i1")
-  val i2 = Inlet[EVT]("Processor.i2")
+  val i2 = Inlet[Control[EVT]]("Processor.i2")
   val o1 = Outlet[EVT]("Processor.o1")
   val o2 = Outlet[RES]("Processor.o2")
 
@@ -53,6 +57,7 @@ private class Processor[EVT: Event, REQ, RES](logic: ProcessorLogic[EVT, REQ, RE
     new GraphStageLogic(shape) {
       private val event = implicitly[Event[EVT]]
       private var cycle: Option[Cycle[EVT, RES]] = None
+      private var recovered = false
 
       import event._
 
@@ -60,7 +65,6 @@ private class Processor[EVT: Event, REQ, RES](logic: ProcessorLogic[EVT, REQ, RE
         override def onPush(): Unit = {
           val cmd = grab(i1)
           val (evts, reply) = logic.onCommand(cmd)
-
           if (evts.isEmpty)
             push(o2, reply())
           else {
@@ -72,27 +76,35 @@ private class Processor[EVT: Event, REQ, RES](logic: ProcessorLogic[EVT, REQ, RE
 
       setHandler(i2, new InHandler {
         override def onPush(): Unit = {
-          val evt = grab(i2)
+          val grabbed = grab(i2)
           pull(i2)
-          logic.onEvent(evt)
-          cycle.foreach { p =>
-            if (eventId(p.events.last) == eventId(evt)) {
-              push(o2, p.reply())
-              cycle = None
-            }
+          grabbed match {
+            case Delivery(evt) =>
+              logic.onEvent(evt)
+              cycle.foreach { p =>
+                if (eventId(p.events.last) == eventId(evt)) {
+                  push(o2, p.reply())
+                  cycle = None
+                }
+              }
+            case Recovered =>
+              if (!recovered) {
+                recovered = true
+                if (isAvailable(o1) && isAvailable(o2)) pull(i1)
+              }
           }
         }
       })
 
       setHandler(o1, new OutHandler {
         override def onPull(): Unit = {
-          if (isAvailable(o2) && cycle.isEmpty) pull(i1)
+          if (recovered && isAvailable(o2) && cycle.isEmpty) pull(i1)
         }
       })
 
       setHandler(o2, new OutHandler {
         override def onPull(): Unit = {
-          if (isAvailable(o1) && cycle.isEmpty) pull(i1)
+          if (recovered && isAvailable(o1) && cycle.isEmpty) pull(i1)
         }
       })
 
