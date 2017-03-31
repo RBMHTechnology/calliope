@@ -25,22 +25,26 @@ import org.apache.kafka.common.TopicPartition
 import scala.collection.immutable.Map
 
 trait KafkaEventHub[K, V] {
-  def aggregateEvents(aggregateId: String, index: KafkaIndex[K, V]): Source[ConsumerRecord[K, V], NotUsed]
+  def aggregateEvents(aggregateId: K, index: KafkaIndex[K, V]): Source[ConsumerRecord[K, V], NotUsed]
 
-  def aggregateEventLog(aggregateId: String, index: KafkaIndex[K, V], sink: Sink[ProducerRecord[K, V], _]): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], NotUsed] =
+  def aggregateEventLog(aggregateId: K, index: KafkaIndex[K, V], sink: Sink[ProducerRecord[K, V], _]): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], NotUsed] =
     Flow.fromSinkAndSource(sink, aggregateEvents(aggregateId, index))
 }
 
-private class KafkaEventHubImpl[K, V: Aggregate](eventSource: Source[ConsumerRecord[K, V], NotUsed],
-                                                 eventSink: Sink[ProducerRecord[K, V], NotUsed],
-                                                 endOffsetsSource: Source[Map[TopicPartition, Long], NotUsed]) extends KafkaEventHub[K, V] {
-  def aggregateEvents(aggregateId: String, index: KafkaIndex[K, V]): Source[ConsumerRecord[K, V], NotUsed] =
+private class KafkaEventHubImpl[K, V](eventSource: Source[ConsumerRecord[K, V], NotUsed],
+                                      eventSink: Sink[ProducerRecord[K, V], NotUsed],
+                                      endOffsetsSource: Source[Map[TopicPartition, Long], NotUsed])
+                                     (implicit aggregate: Aggregate[V, K]) extends KafkaEventHub[K, V] {
+  def aggregateEvents(aggregateId: K, index: KafkaIndex[K, V]): Source[ConsumerRecord[K, V], NotUsed] =
     live(aggregateId).prepend(recovery(aggregateId, index)).via(dedup)
 
-  private def live(aggregateId: String): Source[ConsumerRecord[K, V], NotUsed] =
-    eventSource.filter(cr => implicitly[Aggregate[V]].aggregateId(cr.value) == aggregateId)
+  def aggregateLog(aggregateId: K, index: KafkaIndex[K, V]): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], NotUsed] =
+    Flow.fromSinkAndSource(eventSink, aggregateEvents(aggregateId, index))
 
-  private def recovery(aggregateId: String, index: KafkaIndex[K, V]): Source[ConsumerRecord[K, V], NotUsed] =
+  private def live(aggregateId: K): Source[ConsumerRecord[K, V], NotUsed] =
+    eventSource.filter(cr => aggregate.aggregateId(cr.value) == aggregateId)
+
+  private def recovery(aggregateId: K, index: KafkaIndex[K, V]): Source[ConsumerRecord[K, V], NotUsed] =
     endOffsetsSource.flatMapConcat(index.aggregateEvents(aggregateId, _))
 
   private def dedup: Flow[ConsumerRecord[K, V], ConsumerRecord[K, V], NotUsed] =

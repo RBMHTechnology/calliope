@@ -32,30 +32,30 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 
 object KafkaIndex {
-  def inmem[K, V: Aggregate](system: ActorSystem): KafkaInmemIndex[K, V] =
-    new KafkaInmemIndex[K, V](system)
+  def inmem[K, V](implicit aggregate: Aggregate[V, K], system: ActorSystem): KafkaInmemIndex[K, V] =
+    new KafkaInmemIndex[K, V]
 
-  def scanning[K, V: Aggregate](consumerSettings: ConsumerSettings[K, V]): KafkaIndex[K, V] =
+  def scanning[K, V](consumerSettings: ConsumerSettings[K, V])(implicit aggregate: Aggregate[V, K]): KafkaIndex[K, V] =
     new KafkaScanningIndex[K, V](consumerSettings)
 }
 
 trait KafkaIndex[K, V] {
-  def aggregateEvents(aggregateId: String, untilOffsets: Map[TopicPartition, Long]): Source[ConsumerRecord[K, V], NotUsed]
+  def aggregateEvents(aggregateId: K, untilOffsets: Map[TopicPartition, Long]): Source[ConsumerRecord[K, V], NotUsed]
 }
 
-private class KafkaScanningIndex[K, V: Aggregate](consumerSettings: ConsumerSettings[K, V]) extends KafkaIndex[K, V] {
-  def aggregateEvents(aggregateId: String, untilOffsets: Map[TopicPartition, Long]): Source[ConsumerRecord[K, V], NotUsed] =
-    KafkaEvents.until(consumerSettings, untilOffsets).filter(cr => implicitly[Aggregate[V]].aggregateId(cr.value) == aggregateId)
+private class KafkaScanningIndex[K, V](consumerSettings: ConsumerSettings[K, V])
+                                      (implicit aggregate: Aggregate[V, K]) extends KafkaIndex[K, V] {
+  def aggregateEvents(aggregateId: K, untilOffsets: Map[TopicPartition, Long]): Source[ConsumerRecord[K, V], NotUsed] =
+    KafkaEvents.until(consumerSettings, untilOffsets).filter(cr => aggregate.aggregateId(cr.value) == aggregateId)
 }
 
 private object KafkaInmemIndex {
-  case class State[K, V: Aggregate](aggregateIndex: Map[String, Seq[ConsumerRecord[K, V]]] =
-                                      Map.empty[String, Seq[ConsumerRecord[K, V]]].withDefaultValue(Seq.empty),
-                                    committedOffsets: Map[TopicPartition, Long] =
-                                      Map.empty.withDefaultValue(-1L)) {
+  case class State[K, V](aggregateIndex: Map[K, Seq[ConsumerRecord[K, V]]] = Map.empty[K, Seq[ConsumerRecord[K, V]]].withDefaultValue(Seq.empty),
+                         committedOffsets: Map[TopicPartition, Long] = Map.empty.withDefaultValue(-1L))
+                        (implicit aggregate: Aggregate[V, K]) {
 
     def append(cr: ConsumerRecord[K, V]): State[K, V] = {
-      val aggregateId = implicitly[Aggregate[V]].aggregateId(cr.value)
+      val aggregateId = aggregate.aggregateId(cr.value)
       copy(
         aggregateIndex.updated(aggregateId, aggregateIndex.getOrElse(aggregateId, Seq.empty) :+ cr),
         committedOffsets.updated(new TopicPartition(cr.topic, cr.partition), cr.offset))
@@ -63,7 +63,7 @@ private object KafkaInmemIndex {
   }
 }
 
-class KafkaInmemIndex[K, V: Aggregate](system: ActorSystem) extends KafkaIndex[K, V] {
+class KafkaInmemIndex[K, V](implicit aggregate: Aggregate[V, K], system: ActorSystem) extends KafkaIndex[K, V] {
   import KafkaInmemIndex._
 
   private implicit val materializer: ActorMaterializer =
@@ -72,10 +72,10 @@ class KafkaInmemIndex[K, V: Aggregate](system: ActorSystem) extends KafkaIndex[K
   private val state: AtomicReference[State[K, V]] =
     new AtomicReference(State())
 
-  override def aggregateEvents(aggregateId: String, untilOffsets: Map[TopicPartition, Long]): Source[ConsumerRecord[K, V], NotUsed] =
+  override def aggregateEvents(aggregateId: K, untilOffsets: Map[TopicPartition, Long]): Source[ConsumerRecord[K, V], NotUsed] =
     Source.fromFuture(conditionalRead(aggregateId, untilOffsets)).mapConcat(identity)
 
-  def conditionalRead(aggregateId: String, untilOffsets: Map[TopicPartition, Long]): Future[Seq[ConsumerRecord[K, V]]] = withCurrentState { cs =>
+  def conditionalRead(aggregateId: K, untilOffsets: Map[TopicPartition, Long]): Future[Seq[ConsumerRecord[K, V]]] = withCurrentState { cs =>
     if (offsetsCovered(untilOffsets, cs.committedOffsets)) Future.successful(cs.aggregateIndex(aggregateId).filter { cr =>
       cr.offset < untilOffsets.getOrElse(new TopicPartition(cr.topic, cr.partition), Long.MaxValue)
     }) else after(100.millis, system.scheduler)(conditionalRead(aggregateId, untilOffsets))(system.dispatcher)

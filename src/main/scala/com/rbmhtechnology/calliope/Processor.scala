@@ -35,11 +35,11 @@ object Processor {
 
   private case class Cycle[EVT, RES](events: Seq[EVT], reply: () => RES)
 
-  def apply[EVT: Event, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES]): BidiFlow[REQ, EVT, Processor.Control[EVT], RES, NotUsed] =
+  def apply[ID, EVT, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES])(implicit event: Event[EVT, ID]): BidiFlow[REQ, EVT, Processor.Control[EVT], RES, NotUsed] =
     BidiFlow.fromGraph(new Processor(logic))
 }
 
-private class Processor[EVT: Event, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES]) extends GraphStage[BidiShape[REQ, EVT, Processor.Control[EVT], RES]] {
+private class Processor[ID, EVT, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES])(implicit event: Event[EVT, ID]) extends GraphStage[BidiShape[REQ, EVT, Processor.Control[EVT], RES]] {
   import Processor._
 
   // ------------------------------------------------------------------------------
@@ -55,7 +55,6 @@ private class Processor[EVT: Event, REQ, RES](logic: ProcessorLogic[EVT, REQ, RE
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
     new GraphStageLogic(shape) {
-      private val event = implicitly[Event[EVT]]
       private var cycle: Option[Cycle[EVT, RES]] = None
       private var recovered = false
 

@@ -36,7 +36,7 @@ class KafkaEventHubSpec extends KafkaSpec with BeforeAndAfterEach {
   val e4 = ExampleEvent("e4", "a2", "x") // offset 3
   val e5 = ExampleEvent("e5", "a1", "y") // offset 4
 
-  val index: KafkaInmemIndex[String, ExampleEvent] = KafkaIndex.inmem[String, ExampleEvent](system)
+  val index: KafkaInmemIndex[String, ExampleEvent] = KafkaIndex.inmem[String, ExampleEvent](aggregate, system)
   var producer: KafkaProducer[String, ExampleEvent] = _
 
   override def beforeAll(): Unit = {

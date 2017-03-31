@@ -28,10 +28,10 @@ import org.apache.kafka.common.TopicPartition
 import scala.collection.immutable.Map
 
 object KafkaEvents {
-  def hub[K, V: Aggregate](consumerSettings: ConsumerSettings[K, V],
-                           producerSettings: ProducerSettings[K, V],
-                           topicPartitions: Set[TopicPartition])
-                          (implicit materializer: Materializer): KafkaEventHub[K, V] = {
+  def hub[K, V](consumerSettings: ConsumerSettings[K, V],
+                producerSettings: ProducerSettings[K, V],
+                topicPartitions: Set[TopicPartition])
+               (implicit aggregate: Aggregate[V, K], materializer: Materializer): KafkaEventHub[K, V] = {
     val endOffsetsQueue = KafkaMetadata.endOffsets(consumerSettings, topicPartitions)
       .toMat(Sink.queue())(Keep.right).run()
     val endOffsetsSource = Source.lazily(() => Source.fromFuture(endOffsetsQueue.pull()))

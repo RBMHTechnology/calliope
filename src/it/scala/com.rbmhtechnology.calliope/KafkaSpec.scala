@@ -27,12 +27,10 @@ import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.serialization._
 import org.scalatest._
 
-import scala.collection.immutable.Seq
-
 object KafkaSpec {
   case class ExampleEvent(eventId: String, aggregateId: String, payload: String)
 
-  implicit val aggregate = new Aggregate[ExampleEvent] {
+  implicit val aggregate = new Aggregate[ExampleEvent, String] {
     override def aggregateId(event: ExampleEvent): String = event.aggregateId
   }
 

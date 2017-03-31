@@ -45,7 +45,7 @@ object ProcessorSpec {
       state = state :+ e.increment
   }
 
-  implicit val E = new Event[ExampleEvent] {
+  implicit val E = new Event[ExampleEvent, String] {
     override def eventId(event: ExampleEvent): String = event.id
   }
 }

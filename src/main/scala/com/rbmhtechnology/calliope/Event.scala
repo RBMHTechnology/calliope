@@ -19,6 +19,6 @@ package com.rbmhtechnology.calliope
 /**
   * Event type class.
   */
-trait Event[A] {
-  def eventId(event: A): String
+trait Event[A, B] {
+  def eventId(event: A): B
 }

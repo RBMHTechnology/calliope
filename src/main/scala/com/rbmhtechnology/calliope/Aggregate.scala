@@ -19,6 +19,6 @@ package com.rbmhtechnology.calliope
 /**
   * Aggregate type class.
   */
-trait Aggregate[A] {
-  def aggregateId(event: A): String
+trait Aggregate[A, B] {
+  def aggregateId(event: A): B
 }
