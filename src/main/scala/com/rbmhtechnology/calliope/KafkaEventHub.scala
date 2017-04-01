@@ -25,21 +25,28 @@ import org.apache.kafka.common.TopicPartition
 import scala.collection.immutable.Map
 
 trait KafkaEventHub[K, V] {
-  def aggregateEvents(aggregateId: K, index: KafkaIndex[K, V]): Source[ConsumerRecord[K, V], NotUsed]
-
-  def aggregateEventLog(aggregateId: K, index: KafkaIndex[K, V], sink: Sink[ProducerRecord[K, V], _]): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], NotUsed] =
-    Flow.fromSinkAndSource(sink, aggregateEvents(aggregateId, index))
+  def aggregateEvents(aggregateId: K): Source[ConsumerRecord[K, V], NotUsed]
+  def aggregateEventLog(aggregateId: K): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], NotUsed]
 }
 
-private class KafkaEventHubImpl[K, V](eventSource: Source[ConsumerRecord[K, V], NotUsed],
+private class KafkaEventHubImpl[K, V](eventIndex: KafkaIndex[K, V],
+                                      eventSource: Source[ConsumerRecord[K, V], NotUsed],
                                       eventSink: Sink[ProducerRecord[K, V], NotUsed],
                                       endOffsetsSource: Source[Map[TopicPartition, Long], NotUsed])
                                      (implicit aggregate: Aggregate[V, K]) extends KafkaEventHub[K, V] {
-  def aggregateEvents(aggregateId: K, index: KafkaIndex[K, V]): Source[ConsumerRecord[K, V], NotUsed] =
-    live(aggregateId).prepend(recovery(aggregateId, index)).via(dedup)
+  import Processor._
 
-  def aggregateLog(aggregateId: K, index: KafkaIndex[K, V]): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], NotUsed] =
-    Flow.fromSinkAndSource(eventSink, aggregateEvents(aggregateId, index))
+  def aggregateEvents(aggregateId: K): Source[ConsumerRecord[K, V], NotUsed] =
+    live(aggregateId).prepend(recovery(aggregateId, eventIndex)).via(dedupR(dedupPredicate))
+
+  def aggregateEventLog(aggregateId: K): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], NotUsed] =
+    Flow.fromSinkAndSource(eventSink, aggregateEvents(aggregateId))
+
+  private def processorEvents(aggregateId: K): Source[Control[ConsumerRecord[K, V]], NotUsed] =
+    live(aggregateId).map(Delivery(_)).prepend(recovery(aggregateId, eventIndex).map(Delivery(_)).concat(Source.single(Recovered))).via(dedupC(dedupPredicate))
+
+  private def processorLog(aggregateId: K, index: KafkaIndex[K, V]): Flow[ProducerRecord[K, V], Control[ConsumerRecord[K, V]], NotUsed] =
+    Flow.fromSinkAndSource(eventSink, processorEvents(aggregateId))
 
   private def live(aggregateId: K): Source[ConsumerRecord[K, V], NotUsed] =
     eventSource.filter(cr => aggregate.aggregateId(cr.value) == aggregateId)
@@ -47,16 +54,24 @@ private class KafkaEventHubImpl[K, V](eventSource: Source[ConsumerRecord[K, V], 
   private def recovery(aggregateId: K, index: KafkaIndex[K, V]): Source[ConsumerRecord[K, V], NotUsed] =
     endOffsetsSource.flatMapConcat(index.aggregateEvents(aggregateId, _))
 
-  private def dedup: Flow[ConsumerRecord[K, V], ConsumerRecord[K, V], NotUsed] =
-    Flow[ConsumerRecord[K, V]].filter {
-      var offsets: Map[TopicPartition, Long] = Map.empty
-      cr => {
-        val topicPartition = new TopicPartition(cr.topic, cr.partition)
-        val recordedOffset = offsets.getOrElse(topicPartition, -1L)
-        if (cr.offset > recordedOffset) {
-          offsets = offsets.updated(topicPartition, cr.offset)
-          true
-        } else false
-      }
+  private def dedupR(predicate: ConsumerRecord[K, V] => Boolean): Flow[ConsumerRecord[K, V], ConsumerRecord[K, V], NotUsed] =
+    Flow[ConsumerRecord[K, V]].filter(predicate)
+
+  private def dedupC(predicate: ConsumerRecord[K, V] => Boolean): Flow[Control[ConsumerRecord[K, V]], Control[ConsumerRecord[K, V]], NotUsed] =
+    Flow[Control[ConsumerRecord[K, V]]].filter {
+      case Delivery(cr) => predicate(cr)
+      case Recovered    => true
     }
+
+  private def dedupPredicate: ConsumerRecord[K, V] => Boolean = {
+    var offsets: Map[TopicPartition, Long] = Map.empty
+    cr => {
+      val topicPartition = new TopicPartition(cr.topic, cr.partition)
+      val recordedOffset = offsets.getOrElse(topicPartition, -1L)
+      if (cr.offset > recordedOffset) {
+        offsets = offsets.updated(topicPartition, cr.offset)
+        true
+      } else false
+    }
+  }
 }
