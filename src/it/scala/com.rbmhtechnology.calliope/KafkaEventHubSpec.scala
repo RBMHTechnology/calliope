@@ -51,7 +51,6 @@ class KafkaEventHubSpec extends KafkaSpec with BeforeAndAfterEach {
 
   override def afterAll(): Unit = {
     producer.close()
-    index.shutdown()
     super.afterAll()
   }
 

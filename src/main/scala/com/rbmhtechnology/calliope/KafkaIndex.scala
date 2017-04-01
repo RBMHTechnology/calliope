@@ -22,7 +22,7 @@ import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.kafka.ConsumerSettings
 import akka.pattern.after
-import akka.stream.ActorMaterializer
+import akka.stream.Materializer
 import akka.stream.scaladsl.{Sink, Source}
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.TopicPartition
@@ -66,9 +66,6 @@ private object KafkaInmemIndex {
 class KafkaInmemIndex[K, V](implicit aggregate: Aggregate[V, K], system: ActorSystem) extends KafkaIndex[K, V] {
   import KafkaInmemIndex._
 
-  private implicit val materializer: ActorMaterializer =
-    ActorMaterializer()(system)
-
   private val state: AtomicReference[State[K, V]] =
     new AtomicReference(State())
 
@@ -84,11 +81,8 @@ class KafkaInmemIndex[K, V](implicit aggregate: Aggregate[V, K], system: ActorSy
   def append(cr: ConsumerRecord[K, V]): Unit =
     state.updateAndGet(_.append(cr))
 
-  def connect(consumerSettings: ConsumerSettings[K, V], topicPartitions: Set[TopicPartition]): Unit =
+  def connect(consumerSettings: ConsumerSettings[K, V], topicPartitions: Set[TopicPartition])(implicit materializer: Materializer): Unit =
     KafkaEvents.from(consumerSettings, topicPartitions.map(_ -> 0L).toMap).map(append).runWith(Sink.ignore)
-
-  def shutdown(): Unit =
-    materializer.shutdown()
 
   private def offsetsCovered(untilOffsets: Map[TopicPartition, Long], committedOffsets: Map[TopicPartition, Long]): Boolean =
     untilOffsets.forall { case (tp, offset) => committedOffsets(tp) + 1L >= offset }
