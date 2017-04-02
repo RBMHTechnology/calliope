@@ -30,8 +30,12 @@ import org.scalatest._
 object KafkaSpec {
   case class ExampleEvent(eventId: String, aggregateId: String, payload: String)
 
-  implicit val aggregate = new Aggregate[ExampleEvent, String] {
-    override def aggregateId(event: ExampleEvent): String = event.aggregateId
+  implicit val event = new Event[ExampleEvent, String] {
+    override def eventId(a: ExampleEvent): String = a.eventId
+  }
+
+  implicit val eventAggregate = new Aggregate[ExampleEvent, String] {
+    override def aggregateId(a: ExampleEvent): String = a.aggregateId
   }
 
   class EventSerialization extends Serializer[ExampleEvent] with Deserializer[ExampleEvent] {

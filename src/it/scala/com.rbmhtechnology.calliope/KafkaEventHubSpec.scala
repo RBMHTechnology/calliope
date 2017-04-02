@@ -17,59 +17,132 @@
 package com.rbmhtechnology.calliope
 
 import akka.NotUsed
-import akka.stream.scaladsl.{Keep, Source}
-import akka.stream.testkit.TestSubscriber
-import akka.stream.testkit.scaladsl.TestSink
+import akka.stream.scaladsl.{Flow, Keep, Source}
+import akka.stream.testkit.scaladsl.{TestSink, TestSource}
+import akka.stream.testkit.{TestPublisher, TestSubscriber}
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
-import org.apache.kafka.common.TopicPartition
 import org.scalatest.BeforeAndAfterEach
 
 import scala.collection.immutable.Seq
 
-class KafkaEventHubSpec extends KafkaSpec with BeforeAndAfterEach {
+object KafkaEventHubSpec {
   import KafkaSpec._
 
-  val e1 = ExampleEvent("e1", "a1", "u") // offset 0
-  val e2 = ExampleEvent("e2", "a2", "v") // offset 1
-  val e3 = ExampleEvent("e3", "a1", "w") // offset 2
-  val e4 = ExampleEvent("e4", "a2", "x") // offset 3
-  val e5 = ExampleEvent("e5", "a1", "y") // offset 4
+  trait ExampleRequest { def aggregateId: String }
+  case class ExampleQuery(aggregateId: String) extends ExampleRequest
+  case class ExampleCommand(aggregateId: String, payload: String) extends ExampleRequest
+  case class ExampleReply(aggregateId: String, state: Seq[String])
 
-  val index: KafkaInmemIndex[String, ExampleEvent] = KafkaIndex.inmem[String, ExampleEvent](aggregate, system)
+  implicit val requestAggregate = new Aggregate[ExampleRequest, String] {
+    override def aggregateId(a: ExampleRequest): String = a.aggregateId
+  }
+
+  def processorLogic(aggregateId: String) = new ProcessorLogic[ExampleEvent, ExampleRequest, ExampleReply] {
+    private var eventPayloads: Seq[String] = Seq.empty
+    private var ctr: Int = 1
+
+    override def onRequest(c: ExampleRequest): (Seq[ExampleEvent], () => ExampleReply) = c match {
+      case ExampleQuery(_) =>
+        (Seq(), () => ExampleReply(aggregateId, eventPayloads))
+      case ExampleCommand(_, payload) =>
+        (Seq(ExampleEvent(s"$aggregateId#$ctr", aggregateId, payload)),
+          () => ExampleReply(aggregateId, eventPayloads))
+    }
+
+    override def onEvent(e: ExampleEvent): Unit = {
+      eventPayloads = eventPayloads :+ e.payload
+      ctr = ctr + 1
+    }
+  }
+}
+
+class KafkaEventHubSpec extends KafkaSpec with BeforeAndAfterEach {
+  import KafkaEventHubSpec._
+  import KafkaSpec._
+
   var producer: KafkaProducer[String, ExampleEvent] = _
 
   override def beforeAll(): Unit = {
     super.beforeAll()
-    index.connect(consumerSettings(group), topicPartitions)
     producer = producerSettings.createKafkaProducer()
-    Seq(e1, e2, e3, e4).foreach(send)
   }
-
-  def send(event: ExampleEvent): Unit =
-    producer.send(new ProducerRecord[String, ExampleEvent](tp0.topic, tp0.partition, null, event))
 
   override def afterAll(): Unit = {
     producer.close()
     super.afterAll()
   }
 
-  def eventHub(topicPartitions: Set[TopicPartition]): KafkaEventHub[String, ExampleEvent] =
-    KafkaEvents.hub(consumerSettings(group), producerSettings, topicPartitions, index)
+  def send(topic: String)(event: ExampleEvent): Unit =
+    producer.send(new ProducerRecord[String, ExampleEvent](topic, eventAggregate.aggregateId(event), event))
 
-  def eventSubscriber(source: Source[ConsumerRecord[String, ExampleEvent], NotUsed]): TestSubscriber.Probe[ExampleEvent] =
+  def processorProbes(processor: Flow[ExampleRequest, ExampleReply, NotUsed]): (TestPublisher.Probe[ExampleRequest], TestSubscriber.Probe[ExampleReply]) =
+    TestSource.probe[ExampleRequest].via(processor).toMat(TestSink.probe[ExampleReply])(Keep.both).run()
+
+  def eventProbe(source: Source[ConsumerRecord[String, ExampleEvent], NotUsed]): TestSubscriber.Probe[ExampleEvent] =
     source.map(_.value).toMat(TestSink.probe[ExampleEvent])(Keep.right).run()
+
+  def eventHub(topic: String): KafkaEventHub[String, ExampleEvent] =
+    KafkaEvents.hub(consumerSettings(group), producerSettings, topic, index(topic))
+
+  def index(topic: String): KafkaIndex[String, ExampleEvent] = {
+    val index = KafkaIndex.inmem(eventAggregate, system)
+    index.connect(consumerSettings(group), topic)
+    index
+  }
 
   "An aggregate event source" must {
     "consume past and live aggregate events" in {
-      val hub = eventHub(Set(tp0))
-      val sub = eventSubscriber(hub.aggregateEvents("a1"))
+      val e1 = ExampleEvent("a1#1", "a1", "u")
+      val e2 = ExampleEvent("a2#1", "a2", "v")
+      val e3 = ExampleEvent("a1#2", "a1", "w")
+      val e4 = ExampleEvent("a2#2", "a2", "x")
+      val e5 = ExampleEvent("a1#3", "a1", "y")
+
+      Seq(e1, e2, e3, e4).foreach(send(topic))
+
+      val hub = eventHub(topic)
+      val sub = eventProbe(hub.aggregateEvents("a1"))
 
       sub.request(3)
       sub.expectNextN(2) should be(Seq(e1, e3))
 
-      send(e5)
-      sub.expectNext() should be(e5)
+      send(topic)(e5)
+      sub.expectNext(e5)
+    }
+  }
+
+  "A request processor" must {
+    "create aggregate request processors dynamically" in {
+      val topic = "es"
+      val hub = eventHub(topic)
+      val esub = eventProbe(hub.events)
+      val (rpub, rsub) = processorProbes(hub.processors(10, processorLogic))
+
+      rsub.request(3)
+      esub.request(3)
+
+      rpub.sendNext(ExampleCommand("a1", "a"))
+      rpub.sendNext(ExampleCommand("a2", "b"))
+      rpub.sendNext(ExampleCommand("a1", "c"))
+
+      val actualReplies = rsub.expectNextN(3)
+
+      actualReplies.filter(_.aggregateId == "a1") should be(Seq(
+        ExampleReply("a1", Seq("a")),
+        ExampleReply("a1", Seq("a", "c"))))
+
+      actualReplies.filter(_.aggregateId == "a2") should be(Seq(
+        ExampleReply("a2", Seq("b"))))
+
+      val actualEvents = esub.expectNextN(3)
+
+      actualEvents.filter(_.aggregateId == "a1") should be(Seq(
+        ExampleEvent("a1#1", "a1", "a"),
+        ExampleEvent("a1#2", "a1", "c")))
+
+      actualEvents.filter(_.aggregateId == "a2") should be(Seq(
+        ExampleEvent("a2#1", "a2", "b")))
     }
   }
 }

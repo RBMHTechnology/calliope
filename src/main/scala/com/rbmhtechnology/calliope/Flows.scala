@@ -16,9 +16,12 @@
 
 package com.rbmhtechnology.calliope
 
-/**
-  * Aggregate type class.
-  */
-trait Aggregate[A, B] {
-  def aggregateId(a: A): B
+import akka.NotUsed
+import akka.stream.scaladsl.{Flow, Source}
+
+object Flows {
+  def groupBy[A, B, K](maxSubStreams: Int, key: A => K, via: K => Flow[A, B, NotUsed]): Flow[A, B, NotUsed] =
+    Flow[A].groupBy(maxSubStreams, key).prefixAndTail(1).flatMapMerge(maxSubStreams, {
+      case (h, t) => Source(h).concat(t).via(via(key(h.head)))
+    }).mergeSubstreams
 }

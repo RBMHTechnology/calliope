@@ -81,8 +81,8 @@ class KafkaInmemIndex[K, V](implicit aggregate: Aggregate[V, K], system: ActorSy
   def append(cr: ConsumerRecord[K, V]): Unit =
     state.updateAndGet(_.append(cr))
 
-  def connect(consumerSettings: ConsumerSettings[K, V], topicPartitions: Set[TopicPartition])(implicit materializer: Materializer): Unit =
-    KafkaEvents.from(consumerSettings, topicPartitions.map(_ -> 0L).toMap).map(append).runWith(Sink.ignore)
+  def connect(consumerSettings: ConsumerSettings[K, V], topic: String)(implicit materializer: Materializer): Unit =
+    KafkaMetadata.topicPartitions(consumerSettings, topic).flatMapConcat(tps => KafkaEvents.from(consumerSettings, tps.map(_ -> 0L).toMap)).map(append).runWith(Sink.ignore)
 
   private def offsetsCovered(untilOffsets: Map[TopicPartition, Long], committedOffsets: Map[TopicPartition, Long]): Boolean =
     untilOffsets.forall { case (tp, offset) => committedOffsets(tp) + 1L >= offset }

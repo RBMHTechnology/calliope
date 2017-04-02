@@ -17,7 +17,7 @@
 package com.rbmhtechnology.calliope
 
 import akka.NotUsed
-import akka.stream.scaladsl.{Flow, Sink, Source}
+import akka.stream.scaladsl.{BidiFlow, Flow, Sink, Source}
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.common.TopicPartition
@@ -25,28 +25,57 @@ import org.apache.kafka.common.TopicPartition
 import scala.collection.immutable.Map
 
 trait KafkaEventHub[K, V] {
+  def topic: String
+  def index: KafkaIndex[K, V]
+
+  def events: Source[ConsumerRecord[K, V], NotUsed]
   def aggregateEvents(aggregateId: K): Source[ConsumerRecord[K, V], NotUsed]
   def aggregateEventLog(aggregateId: K): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], NotUsed]
+
+  def processors[ID, REQ, RES](maxProcessors: Int, logic: K => ProcessorLogic[V, REQ, RES])
+                              (implicit event: Event[V, ID], aggregate: Aggregate[REQ, K]): Flow[REQ, RES, NotUsed]
+  def processor[ID, REQ, RES](aggregateId: K, logic: ProcessorLogic[V, REQ, RES])
+                             (implicit event: Event[V, ID]): Flow[REQ, RES, NotUsed]
+
 }
 
-private class KafkaEventHubImpl[K, V](eventIndex: KafkaIndex[K, V],
+private class KafkaEventHubImpl[K, V](override val topic: String,
+                                      override val index: KafkaIndex[K, V],
                                       eventSource: Source[ConsumerRecord[K, V], NotUsed],
                                       eventSink: Sink[ProducerRecord[K, V], NotUsed],
                                       endOffsetsSource: Source[Map[TopicPartition, Long], NotUsed])
                                      (implicit aggregate: Aggregate[V, K]) extends KafkaEventHub[K, V] {
   import Processor._
 
-  def aggregateEvents(aggregateId: K): Source[ConsumerRecord[K, V], NotUsed] =
-    live(aggregateId).prepend(recovery(aggregateId, eventIndex)).via(dedupR(dedupPredicate))
 
-  def aggregateEventLog(aggregateId: K): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], NotUsed] =
+  override def events: Source[ConsumerRecord[K, V], NotUsed] =
+    eventSource
+
+  override def aggregateEvents(aggregateId: K): Source[ConsumerRecord[K, V], NotUsed] =
+    live(aggregateId).prepend(recovery(aggregateId, index)).via(dedupR(dedupPredicate))
+
+  override def aggregateEventLog(aggregateId: K): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], NotUsed] =
     Flow.fromSinkAndSource(eventSink, aggregateEvents(aggregateId))
 
+  override def processors[ID, REQ, RES](maxProcessors: Int, logic: K => ProcessorLogic[V, REQ, RES])
+                              (implicit event: Event[V, ID], aggregate: Aggregate[REQ, K]): Flow[REQ, RES, NotUsed] =
+    Flows.groupBy[REQ, RES, K](maxProcessors, aggregate.aggregateId, aggregateId => processor(aggregateId, logic(aggregateId)))
+
+  override def processor[ID, REQ, RES](aggregateId: K, logic: ProcessorLogic[V, REQ, RES])
+                             (implicit event: Event[V, ID]): Flow[REQ, RES, NotUsed] =
+    BidiFlow.fromGraph(Processor[ID, V, REQ, RES](logic)).atop(processorLogAdapter).join(processorLog(aggregateId, index))
+
   private def processorEvents(aggregateId: K): Source[Control[ConsumerRecord[K, V]], NotUsed] =
-    live(aggregateId).map(Delivery(_)).prepend(recovery(aggregateId, eventIndex).map(Delivery(_)).concat(Source.single(Recovered))).via(dedupC(dedupPredicate))
+    live(aggregateId).map(Delivery(_)).prepend(recovery(aggregateId, index).map(Delivery(_)).concat(Source.single(Recovered))).via(dedupC(dedupPredicate))
 
   private def processorLog(aggregateId: K, index: KafkaIndex[K, V]): Flow[ProducerRecord[K, V], Control[ConsumerRecord[K, V]], NotUsed] =
     Flow.fromSinkAndSource(eventSink, processorEvents(aggregateId))
+
+  private def processorLogAdapter: BidiFlow[V, ProducerRecord[K, V], Control[ConsumerRecord[K, V]], Control[V], NotUsed] =
+    BidiFlow.fromFunctions(v => new ProducerRecord[K, V](topic, aggregate.aggregateId(v), v), {
+      case Delivery(cr) => Delivery(cr.value)
+      case Recovered => Recovered
+    })
 
   private def live(aggregateId: K): Source[ConsumerRecord[K, V], NotUsed] =
     eventSource.filter(cr => aggregate.aggregateId(cr.value) == aggregateId)

@@ -30,10 +30,10 @@ import scala.collection.immutable.Map
 object KafkaEvents {
   def hub[K, V](consumerSettings: ConsumerSettings[K, V],
                 producerSettings: ProducerSettings[K, V],
-                topicPartitions: Set[TopicPartition],
-                eventIndex: KafkaIndex[K, V])
+                topic: String,
+                index: KafkaIndex[K, V])
                (implicit aggregate: Aggregate[V, K], materializer: Materializer): KafkaEventHub[K, V] = {
-    val endOffsetsQueue = KafkaMetadata.endOffsets(consumerSettings, topicPartitions)
+    val endOffsetsQueue = KafkaMetadata.endOffsets(consumerSettings, topic)
       .toMat(Sink.queue())(Keep.right).run()
     val endOffsetsSource = Source.lazily(() => Source.fromFuture(endOffsetsQueue.pull()))
       .map(_.getOrElse(throw new Exception("end offsets unavailable"))).mapMaterializedValue(_ => NotUsed)
@@ -41,7 +41,7 @@ object KafkaEvents {
       .toMat(BroadcastHub.sink[ConsumerRecord[K, V]])(Keep.right).run()
     val eventSink = MergeHub.source[ProducerRecord[K, V]]
       .toMat(Producer.plainSink(producerSettings))(Keep.left).run()
-    new KafkaEventHubImpl[K, V](eventIndex, eventSource, eventSink, endOffsetsSource)
+    new KafkaEventHubImpl[K, V](topic, index, eventSource, eventSink, endOffsetsSource)
   }
 
   def from[K, V](consumerSettings: ConsumerSettings[K, V],

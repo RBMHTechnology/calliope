@@ -24,7 +24,7 @@ import akka.stream.stage.{GraphStage, GraphStageLogic, InHandler, OutHandler}
 import scala.collection.immutable.Seq
 
 trait ProcessorLogic[EVT, REQ, RES] {
-  def onCommand(c: REQ): (Seq[EVT], () => RES)
+  def onRequest(r: REQ): (Seq[EVT], () => RES)
   def onEvent(e: EVT): Unit
 }
 
@@ -42,10 +42,6 @@ object Processor {
 private class Processor[ID, EVT, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES])(implicit event: Event[EVT, ID]) extends GraphStage[BidiShape[REQ, EVT, Processor.Control[EVT], RES]] {
   import Processor._
 
-  // ------------------------------------------------------------------------------
-  // TODO: Delay stage completion until current command processing cycle completed
-  // ------------------------------------------------------------------------------
-
   val i1 = Inlet[REQ]("Processor.i1")
   val i2 = Inlet[Control[EVT]]("Processor.i2")
   val o1 = Outlet[EVT]("Processor.o1")
@@ -62,8 +58,8 @@ private class Processor[ID, EVT, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES])
 
       setHandler(i1, new InHandler {
         override def onPush(): Unit = {
-          val cmd = grab(i1)
-          val (evts, reply) = logic.onCommand(cmd)
+          val req = grab(i1)
+          val (evts, reply) = logic.onRequest(req)
           if (evts.isEmpty)
             push(o2, reply())
           else {

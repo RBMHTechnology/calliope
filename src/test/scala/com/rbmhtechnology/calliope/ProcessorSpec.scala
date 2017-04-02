@@ -36,7 +36,7 @@ object ProcessorSpec {
   def logic = new ProcessorLogic[ExampleEvent, ExampleRequest, ExampleReply] {
     private var state: Seq[String] = Seq()
 
-    override def onCommand(c: ExampleRequest): (Seq[ExampleEvent], () => ExampleReply) = c match {
+    override def onRequest(c: ExampleRequest): (Seq[ExampleEvent], () => ExampleReply) = c match {
       case ExampleRequest(id, "get") => (Nil, () => ExampleReply(id, state))
       case ExampleRequest(id, incr) => (Seq(ExampleEvent(id, incr)), () => ExampleReply(id, state))
     }
@@ -46,7 +46,7 @@ object ProcessorSpec {
   }
 
   implicit val E = new Event[ExampleEvent, String] {
-    override def eventId(event: ExampleEvent): String = event.id
+    override def eventId(a: ExampleEvent): String = a.id
   }
 }
 
@@ -60,8 +60,8 @@ class ProcessorSpec extends TestKit(ActorSystem("test")) with WordSpecLike with 
     TestKit.shutdownActorSystem(system)
   }
 
-  def commandProbes(commandProcessor: Flow[ExampleRequest, ExampleReply, NotUsed]): (TestPublisher.Probe[ExampleRequest], TestSubscriber.Probe[ExampleReply]) =
-    TestSource.probe[ExampleRequest].via(commandProcessor).toMat(TestSink.probe[ExampleReply])(Keep.both).run()
+  def requestProbes(requestProcessor: Flow[ExampleRequest, ExampleReply, NotUsed]): (TestPublisher.Probe[ExampleRequest], TestSubscriber.Probe[ExampleReply]) =
+    TestSource.probe[ExampleRequest].via(requestProcessor).toMat(TestSink.probe[ExampleReply])(Keep.both).run()
 
   def processorProbes[I1, O1, I2, O2](processor: BidiFlow[I1, O1, I2, O2, NotUsed]): (TestPublisher.Probe[I1], TestSubscriber.Probe[O2], TestPublisher.Probe[I2], TestSubscriber.Probe[O1]) =
     TestSource.probe[I1].viaMat(processor.joinMat(log[O1, I2])(Keep.right))(Keep.both).toMat(TestSink.probe[O2])(Keep.both).mapMaterializedValue { case ((rpub, (esub, epub)), rsub) => (rpub, rsub, epub, esub) }.run()
@@ -80,7 +80,7 @@ class ProcessorSpec extends TestKit(ActorSystem("test")) with WordSpecLike with 
 
   "A processor" must {
     "process query requests" in {
-      val (pub, sub) = commandProbes(recoveredProcessor.join(log(Nil)))
+      val (pub, sub) = requestProbes(recoveredProcessor.join(log(Nil)))
 
       sub.request(1)
 
@@ -88,7 +88,7 @@ class ProcessorSpec extends TestKit(ActorSystem("test")) with WordSpecLike with 
       sub.expectNext(ExampleReply("1", Seq()))
     }
     "process update requests" in {
-      val (pub, sub) = commandProbes(recoveredProcessor.join(log(Nil)))
+      val (pub, sub) = requestProbes(recoveredProcessor.join(log(Nil)))
 
       sub.request(2)
 

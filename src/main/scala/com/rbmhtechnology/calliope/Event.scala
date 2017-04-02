@@ -20,5 +20,5 @@ package com.rbmhtechnology.calliope
   * Event type class.
   */
 trait Event[A, B] {
-  def eventId(event: A): B
+  def eventId(a: A): B
 }
