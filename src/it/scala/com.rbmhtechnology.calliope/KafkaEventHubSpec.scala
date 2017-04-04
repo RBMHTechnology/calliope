@@ -23,6 +23,7 @@ import akka.stream.testkit.{TestPublisher, TestSubscriber}
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
 import org.scalatest.BeforeAndAfterEach
+import org.scalatest.concurrent.Eventually
 
 import scala.collection.immutable.Seq
 
@@ -32,22 +33,22 @@ object KafkaEventHubSpec {
   trait ExampleRequest { def aggregateId: String }
   case class ExampleQuery(aggregateId: String) extends ExampleRequest
   case class ExampleCommand(aggregateId: String, payload: String) extends ExampleRequest
-  case class ExampleReply(aggregateId: String, state: Seq[String])
+  case class ExampleResponse(aggregateId: String, state: Seq[String])
 
   implicit val requestAggregate = new Aggregate[ExampleRequest, String] {
     override def aggregateId(a: ExampleRequest): String = a.aggregateId
   }
 
-  def processorLogic(aggregateId: String) = new ProcessorLogic[ExampleEvent, ExampleRequest, ExampleReply] {
+  def processorLogic(aggregateId: String) = new ProcessorLogic[ExampleEvent, ExampleRequest, ExampleResponse] {
     private var eventPayloads: Seq[String] = Seq.empty
     private var ctr: Int = 1
 
-    override def onRequest(c: ExampleRequest): (Seq[ExampleEvent], () => ExampleReply) = c match {
+    override def onRequest(c: ExampleRequest): (Seq[ExampleEvent], () => ExampleResponse) = c match {
       case ExampleQuery(_) =>
-        (Seq(), () => ExampleReply(aggregateId, eventPayloads))
+        (Seq(), () => ExampleResponse(aggregateId, eventPayloads))
       case ExampleCommand(_, payload) =>
         (Seq(ExampleEvent(s"$aggregateId#$ctr", aggregateId, payload)),
-          () => ExampleReply(aggregateId, eventPayloads))
+          () => ExampleResponse(aggregateId, eventPayloads))
     }
 
     override def onEvent(e: ExampleEvent): Unit = {
@@ -57,7 +58,7 @@ object KafkaEventHubSpec {
   }
 }
 
-class KafkaEventHubSpec extends KafkaSpec with BeforeAndAfterEach {
+class KafkaEventHubSpec extends KafkaSpec with BeforeAndAfterEach with Eventually {
   import KafkaEventHubSpec._
   import KafkaSpec._
 
@@ -76,8 +77,8 @@ class KafkaEventHubSpec extends KafkaSpec with BeforeAndAfterEach {
   def send(topic: String)(event: ExampleEvent): Unit =
     producer.send(new ProducerRecord[String, ExampleEvent](topic, eventAggregate.aggregateId(event), event))
 
-  def processorProbes(processor: Flow[ExampleRequest, ExampleReply, NotUsed]): (TestPublisher.Probe[ExampleRequest], TestSubscriber.Probe[ExampleReply]) =
-    TestSource.probe[ExampleRequest].via(processor).toMat(TestSink.probe[ExampleReply])(Keep.both).run()
+  def processorProbes(processor: Flow[ExampleRequest, ExampleResponse, NotUsed]): (TestPublisher.Probe[ExampleRequest], TestSubscriber.Probe[ExampleResponse]) =
+    TestSource.probe[ExampleRequest].via(processor).toMat(TestSink.probe[ExampleResponse])(Keep.both).run()
 
   def eventProbe(source: Source[ConsumerRecord[String, ExampleEvent], NotUsed]): TestSubscriber.Probe[ExampleEvent] =
     source.map(_.value).toMat(TestSink.probe[ExampleEvent])(Keep.right).run()
@@ -111,13 +112,12 @@ class KafkaEventHubSpec extends KafkaSpec with BeforeAndAfterEach {
       sub.expectNext(e5)
     }
   }
-
   "A request processor" must {
     "create aggregate request processors dynamically" in {
-      val topic = "es"
+      val topic = "es-1"
       val hub = eventHub(topic)
       val esub = eventProbe(hub.events)
-      val (rpub, rsub) = processorProbes(hub.processors(10, processorLogic))
+      val (rpub, rsub) = processorProbes(hub.requestProcessorN(10, processorLogic))
 
       rsub.request(3)
       esub.request(3)
@@ -126,14 +126,14 @@ class KafkaEventHubSpec extends KafkaSpec with BeforeAndAfterEach {
       rpub.sendNext(ExampleCommand("a2", "b"))
       rpub.sendNext(ExampleCommand("a1", "c"))
 
-      val actualReplies = rsub.expectNextN(3)
+      // -----------------------------------------------
+      // Response order corresponds to request order !!!
+      // -----------------------------------------------
 
-      actualReplies.filter(_.aggregateId == "a1") should be(Seq(
-        ExampleReply("a1", Seq("a")),
-        ExampleReply("a1", Seq("a", "c"))))
-
-      actualReplies.filter(_.aggregateId == "a2") should be(Seq(
-        ExampleReply("a2", Seq("b"))))
+      rsub.expectNextN(3) should be(Seq(
+        ExampleResponse("a1", Seq("a")),
+        ExampleResponse("a2", Seq("b")),
+        ExampleResponse("a1", Seq("a", "c"))))
 
       val actualEvents = esub.expectNextN(3)
 
@@ -143,6 +143,34 @@ class KafkaEventHubSpec extends KafkaSpec with BeforeAndAfterEach {
 
       actualEvents.filter(_.aggregateId == "a2") should be(Seq(
         ExampleEvent("a2#1", "a2", "b")))
+    }
+    "collaborate with request processors of same aggregate id in other hubs" in {
+      val topic = "es-2"
+      val hub1 = eventHub(topic)
+      val hub2 = eventHub(topic)
+
+      val (rpub1, rsub1) = processorProbes(hub1.requestProcessorN(10, processorLogic))
+      val (rpub2, rsub2) = processorProbes(hub2.requestProcessorN(10, processorLogic))
+
+      rsub1.request(1)
+      rpub1.sendNext(ExampleCommand("a1", "a"))
+      rsub1.requestNext(ExampleResponse("a1", Seq("a")))
+
+      eventually {
+        rsub2.request(1)
+        rpub2.sendNext(ExampleQuery("a1"))
+        rsub2.requestNext(ExampleResponse("a1", Seq("a")))
+      }
+
+      rsub2.request(1)
+      rpub2.sendNext(ExampleCommand("a1", "b"))
+      rsub2.requestNext(ExampleResponse("a1", Seq("a", "b")))
+
+      eventually {
+        rsub1.request(1)
+        rpub1.sendNext(ExampleQuery("a1"))
+        rsub1.requestNext(ExampleResponse("a1", Seq("a", "b")))
+      }
     }
   }
 }

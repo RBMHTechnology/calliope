@@ -52,6 +52,7 @@ object ProcessorSpec {
 
 class ProcessorSpec extends TestKit(ActorSystem("test")) with WordSpecLike with Matchers with BeforeAndAfterAll {
   import ProcessorSpec._
+  import Processor._
 
   implicit val materializer = ActorMaterializer()
 
@@ -67,9 +68,9 @@ class ProcessorSpec extends TestKit(ActorSystem("test")) with WordSpecLike with 
     TestSource.probe[I1].viaMat(processor.joinMat(log[O1, I2])(Keep.right))(Keep.both).toMat(TestSink.probe[O2])(Keep.both).mapMaterializedValue { case ((rpub, (esub, epub)), rsub) => (rpub, rsub, epub, esub) }.run()
 
   def recoveredProcessor: BidiFlow[ExampleRequest, ExampleEvent, ExampleEvent, ExampleReply, NotUsed] =
-    unrecoveredProcessor.atop(BidiFlow.fromFlows(Flow[ExampleEvent], Flow[ExampleEvent].map(Processor.Delivery(_)).prepend(Source.single(Processor.Recovered))))
+    unrecoveredProcessor.atop(BidiFlow.fromFlows(Flow[ExampleEvent], Flow[ExampleEvent].map(Received(_)).prepend(Source.single(Recovered))))
 
-  def unrecoveredProcessor: BidiFlow[ExampleRequest, ExampleEvent, Processor.Control[ExampleEvent], ExampleReply, NotUsed] =
+  def unrecoveredProcessor: BidiFlow[ExampleRequest, ExampleEvent, Recovery[ExampleEvent], ExampleReply, NotUsed] =
     BidiFlow.fromGraph(Processor(logic))
 
   def log(entries: Seq[ExampleEvent]): Flow[ExampleEvent, ExampleEvent, NotUsed] =
@@ -132,11 +133,11 @@ class ProcessorSpec extends TestKit(ActorSystem("test")) with WordSpecLike with 
       esub.request(1)
 
       rpub.sendNext(ExampleRequest("3", "baz"))
-      epub.sendNext(Processor.Delivery(ExampleEvent("1", "foo")))
+      epub.sendNext(Received(ExampleEvent("1", "foo")))
       esub.expectNoMsg(100.millis)
-      epub.sendNext(Processor.Delivery(ExampleEvent("2", "bar")))
+      epub.sendNext(Received(ExampleEvent("2", "bar")))
       esub.expectNoMsg(100.millis)
-      epub.sendNext(Processor.Recovered)
+      epub.sendNext(Recovered)
       esub.expectNext(ExampleEvent("3", "baz"))
     }
   }

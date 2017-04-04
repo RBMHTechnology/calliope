@@ -28,24 +28,25 @@ trait ProcessorLogic[EVT, REQ, RES] {
   def onEvent(e: EVT): Unit
 }
 
+import Processor._
 object Processor {
-  sealed trait Control[+EVT]
-  case object Recovered extends Control[Nothing]
-  case class Delivery[EVT](event: EVT) extends Control[EVT]
+  sealed trait Recovery[+A]
+  case object Recovered extends Recovery[Nothing]
+  case class Received[A](event: A) extends Recovery[A]
 
-  private case class Cycle[EVT, RES](events: Seq[EVT], reply: () => RES)
+  private case class Cycle[EVT, RES](events: Seq[EVT], reply: () => Sequenced[RES])
 
-  def apply[ID, EVT, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES])(implicit event: Event[EVT, ID]): BidiFlow[REQ, EVT, Processor.Control[EVT], RES, NotUsed] =
-    BidiFlow.fromGraph(new Processor(logic))
+  def apply[ID, EVT, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES])(implicit event: Event[EVT, ID]): BidiFlow[REQ, EVT, Recovery[EVT], RES, NotUsed] =
+    BidiFlow.fromFunctions[REQ, Sequenced[REQ], Sequenced[RES], RES](Sequenced(_, 0L), _.message).atop(BidiFlow.fromGraph(new Processor(logic)))
 }
 
-private class Processor[ID, EVT, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES])(implicit event: Event[EVT, ID]) extends GraphStage[BidiShape[REQ, EVT, Processor.Control[EVT], RES]] {
+private class Processor[ID, EVT, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES])(implicit event: Event[EVT, ID]) extends GraphStage[BidiShape[Sequenced[REQ], EVT, Recovery[EVT], Sequenced[RES]]] {
   import Processor._
 
-  val i1 = Inlet[REQ]("Processor.i1")
-  val i2 = Inlet[Control[EVT]]("Processor.i2")
+  val i1 = Inlet[Sequenced[REQ]]("Processor.i1")
+  val i2 = Inlet[Recovery[EVT]]("Processor.i2")
   val o1 = Outlet[EVT]("Processor.o1")
-  val o2 = Outlet[RES]("Processor.o2")
+  val o2 = Outlet[Sequenced[RES]]("Processor.o2")
 
   val shape = BidiShape.of(i1, o1, i2, o2)
 
@@ -58,12 +59,13 @@ private class Processor[ID, EVT, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES])
 
       setHandler(i1, new InHandler {
         override def onPush(): Unit = {
-          val req = grab(i1)
-          val (evts, reply) = logic.onRequest(req)
+          val seq = grab(i1)
+          val (evts, reply) = logic.onRequest(seq.message)
+          val sreply = () => Sequenced(reply(), seq.sequenceNr)
           if (evts.isEmpty)
-            push(o2, reply())
+            push(o2, sreply())
           else {
-            cycle = Some(Cycle(evts, reply))
+            cycle = Some(Cycle(evts, sreply))
             emitMultiple(o1, evts)
           }
         }
@@ -74,7 +76,7 @@ private class Processor[ID, EVT, REQ, RES](logic: ProcessorLogic[EVT, REQ, RES])
           val grabbed = grab(i2)
           pull(i2)
           grabbed match {
-            case Delivery(evt) =>
+            case Received(evt) =>
               logic.onEvent(evt)
               cycle.foreach { p =>
                 if (eventId(p.events.last) == eventId(evt)) {

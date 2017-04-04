@@ -32,10 +32,10 @@ trait KafkaEventHub[K, V] {
   def aggregateEvents(aggregateId: K): Source[ConsumerRecord[K, V], NotUsed]
   def aggregateEventLog(aggregateId: K): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], NotUsed]
 
-  def processors[ID, REQ, RES](maxProcessors: Int, logic: K => ProcessorLogic[V, REQ, RES])
-                              (implicit event: Event[V, ID], aggregate: Aggregate[REQ, K]): Flow[REQ, RES, NotUsed]
-  def processor[ID, REQ, RES](aggregateId: K, logic: ProcessorLogic[V, REQ, RES])
-                             (implicit event: Event[V, ID]): Flow[REQ, RES, NotUsed]
+  def requestProcessorN[ID, REQ, RES](maxProcessors: Int, logic: K => ProcessorLogic[V, REQ, RES])
+                                     (implicit event: Event[V, ID], aggregate: Aggregate[REQ, K]): Flow[REQ, RES, NotUsed]
+  def requestProcessor1[ID, REQ, RES](aggregateId: K, logic: ProcessorLogic[V, REQ, RES])
+                                     (implicit event: Event[V, ID]): Flow[REQ, RES, NotUsed]
 
 }
 
@@ -47,7 +47,6 @@ private class KafkaEventHubImpl[K, V](override val topic: String,
                                      (implicit aggregate: Aggregate[V, K]) extends KafkaEventHub[K, V] {
   import Processor._
 
-
   override def events: Source[ConsumerRecord[K, V], NotUsed] =
     eventSource
 
@@ -57,23 +56,27 @@ private class KafkaEventHubImpl[K, V](override val topic: String,
   override def aggregateEventLog(aggregateId: K): Flow[ProducerRecord[K, V], ConsumerRecord[K, V], NotUsed] =
     Flow.fromSinkAndSource(eventSink, aggregateEvents(aggregateId))
 
-  override def processors[ID, REQ, RES](maxProcessors: Int, logic: K => ProcessorLogic[V, REQ, RES])
-                              (implicit event: Event[V, ID], aggregate: Aggregate[REQ, K]): Flow[REQ, RES, NotUsed] =
-    Flows.groupBy[REQ, RES, K](maxProcessors, aggregate.aggregateId, aggregateId => processor(aggregateId, logic(aggregateId)))
+  override def requestProcessorN[ID, REQ, RES](maxProcessors: Int, logic: K => ProcessorLogic[V, REQ, RES])(implicit event: Event[V, ID], aggregate: Aggregate[REQ, K]): Flow[REQ, RES, NotUsed] =
+    Sequenced[REQ, RES].join(Flows.groupBy[Sequenced[REQ], Sequenced[RES], K](maxProcessors, sequenced => aggregate.aggregateId(sequenced.message), aggregateId => requestProcessor(aggregateId, logic(aggregateId))))
 
-  override def processor[ID, REQ, RES](aggregateId: K, logic: ProcessorLogic[V, REQ, RES])
-                             (implicit event: Event[V, ID]): Flow[REQ, RES, NotUsed] =
-    BidiFlow.fromGraph(Processor[ID, V, REQ, RES](logic)).atop(processorLogAdapter).join(processorLog(aggregateId, index))
+  override def requestProcessor1[ID, REQ, RES](aggregateId: K, logic: ProcessorLogic[V, REQ, RES])(implicit event: Event[V, ID]): Flow[REQ, RES, NotUsed] =
+    requestProcessor(aggregateId, BidiFlow.fromGraph(Processor[ID, V, REQ, RES](logic)))
 
-  private def processorEvents(aggregateId: K): Source[Control[ConsumerRecord[K, V]], NotUsed] =
-    live(aggregateId).map(Delivery(_)).prepend(recovery(aggregateId, index).map(Delivery(_)).concat(Source.single(Recovered))).via(dedupC(dedupPredicate))
+  private def requestProcessor[ID, REQ, RES](aggregateId: K, logic: ProcessorLogic[V, REQ, RES])(implicit event: Event[V, ID]): Flow[Sequenced[REQ], Sequenced[RES], NotUsed] =
+    requestProcessor(aggregateId, BidiFlow.fromGraph(new Processor[ID, V, REQ, RES](logic)))
 
-  private def processorLog(aggregateId: K, index: KafkaIndex[K, V]): Flow[ProducerRecord[K, V], Control[ConsumerRecord[K, V]], NotUsed] =
+  private def requestProcessor[REQ, RES](aggregateId: K, processor: BidiFlow[REQ, V, Recovery[V], RES, NotUsed]): Flow[REQ, RES, NotUsed] =
+    BidiFlow.fromGraph(processor).atop(processorLogAdapter).join(processorLog(aggregateId, index))
+
+  private def processorEvents(aggregateId: K): Source[Recovery[ConsumerRecord[K, V]], NotUsed] =
+    live(aggregateId).map(Received(_)).prepend(recovery(aggregateId, index).map(Received(_)).concat(Source.single(Recovered))).via(dedupC(dedupPredicate))
+
+  private def processorLog(aggregateId: K, index: KafkaIndex[K, V]): Flow[ProducerRecord[K, V], Recovery[ConsumerRecord[K, V]], NotUsed] =
     Flow.fromSinkAndSource(eventSink, processorEvents(aggregateId))
 
-  private def processorLogAdapter: BidiFlow[V, ProducerRecord[K, V], Control[ConsumerRecord[K, V]], Control[V], NotUsed] =
+  private def processorLogAdapter: BidiFlow[V, ProducerRecord[K, V], Recovery[ConsumerRecord[K, V]], Recovery[V], NotUsed] =
     BidiFlow.fromFunctions(v => new ProducerRecord[K, V](topic, aggregate.aggregateId(v), v), {
-      case Delivery(cr) => Delivery(cr.value)
+      case Received(cr) => Received(cr.value)
       case Recovered => Recovered
     })
 
@@ -86,9 +89,9 @@ private class KafkaEventHubImpl[K, V](override val topic: String,
   private def dedupR(predicate: ConsumerRecord[K, V] => Boolean): Flow[ConsumerRecord[K, V], ConsumerRecord[K, V], NotUsed] =
     Flow[ConsumerRecord[K, V]].filter(predicate)
 
-  private def dedupC(predicate: ConsumerRecord[K, V] => Boolean): Flow[Control[ConsumerRecord[K, V]], Control[ConsumerRecord[K, V]], NotUsed] =
-    Flow[Control[ConsumerRecord[K, V]]].filter {
-      case Delivery(cr) => predicate(cr)
+  private def dedupC(predicate: ConsumerRecord[K, V] => Boolean): Flow[Recovery[ConsumerRecord[K, V]], Recovery[ConsumerRecord[K, V]], NotUsed] =
+    Flow[Recovery[ConsumerRecord[K, V]]].filter {
+      case Received(cr) => predicate(cr)
       case Recovered    => true
     }
 
