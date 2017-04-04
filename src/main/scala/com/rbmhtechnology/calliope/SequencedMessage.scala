@@ -16,13 +16,4 @@
 
 package com.rbmhtechnology.calliope
 
-import akka.testkit.TestKit
-import org.scalatest.{BeforeAndAfterAll, Suite}
-
-trait StopSystemAfterAll extends BeforeAndAfterAll { this: TestKit with Suite =>
-
-  override protected def afterAll(): Unit = {
-    TestKit.shutdownActorSystem(system)
-    super.afterAll()
-  }
-}
+case class SequencedMessage[A](payload: A, sourceId: String, sequenceNo: Long, creationTimestamp: Long)

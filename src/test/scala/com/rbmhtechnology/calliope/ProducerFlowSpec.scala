@@ -93,11 +93,10 @@ trait ProducerFlowBehaviours { this: WordSpecLike with MustMatchers with StreamS
 }
 
 class ProducerFlowSpec extends TestKit(ActorSystem("test"))
-  with WordSpecLike with MustMatchers with StreamSpec with FlowSpec with ProducerFlowBehaviours {
+  with WordSpecLike with MustMatchers with SpecWords with StreamSpec with FlowSpec with ProducerFlowBehaviours {
 
   import ProducerFlowSpec._
 
-  private def invokedWith = afterWord("invoked with")
   private def createAFlowThat = afterWord("create a flow that")
 
   val inputMessage = ProducibleMessage(topic = "topic", id = 1L, payload = "payload", timestamp = Some(1000L))

@@ -23,12 +23,11 @@ import akka.stream.testkit.{TestPublisher, TestSubscriber}
 import akka.testkit.TestKit
 import org.scalatest.{BeforeAndAfterAll, Suite}
 
-trait StreamSpec extends BeforeAndAfterAll { this: TestKit with Suite =>
+trait StreamSpec extends BeforeAndAfterAll with StopSystemAfterAll { this: TestKit with Suite =>
   implicit val materializer = ActorMaterializer()
 
   override protected def afterAll(): Unit = {
     materializer.shutdown()
-    TestKit.shutdownActorSystem(system)
     super.afterAll()
   }
 }
