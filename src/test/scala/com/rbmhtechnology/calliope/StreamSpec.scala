@@ -16,15 +16,18 @@
 
 package com.rbmhtechnology.calliope
 
-import akka.stream.ActorMaterializer
-import akka.stream.scaladsl.{Flow, Keep, Source}
+import akka.stream.scaladsl.{Flow, Keep, Sink, Source}
 import akka.stream.testkit.scaladsl.{TestSink, TestSource}
 import akka.stream.testkit.{TestPublisher, TestSubscriber}
+import akka.stream.{ActorMaterializer, ActorMaterializerSettings}
 import akka.testkit.TestKit
 import org.scalatest.{BeforeAndAfterAll, Suite}
 
 trait StreamSpec extends BeforeAndAfterAll with StopSystemAfterAll { this: TestKit with Suite =>
-  implicit val materializer = ActorMaterializer()
+
+  def materializerSettings: Option[ActorMaterializerSettings] = None
+
+  implicit lazy val materializer = ActorMaterializer(materializerSettings)
 
   override protected def afterAll(): Unit = {
     materializer.shutdown()
@@ -51,4 +54,12 @@ trait SourceSpec { this: TestKit with StreamSpec =>
 
   def runSource[Out, M](source: Source[Out, M]): (M, TestSubscriber.Probe[Out]) =
     source.toMat(TestSink.probe)(Keep.both).run()
+}
+
+trait SinkSpec { this: TestKit with StreamSpec =>
+
+  def runSink[In, M](sink: Sink[In, M]): (TestPublisher.Probe[In], M) =
+    TestSource.probe[In]
+      .toMat(sink)(Keep.both)
+      .run()
 }
