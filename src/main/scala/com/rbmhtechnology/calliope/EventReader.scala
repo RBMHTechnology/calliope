@@ -16,6 +16,7 @@
 
 package com.rbmhtechnology.calliope
 
+import scala.collection.immutable.Seq
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
@@ -29,7 +30,7 @@ trait EventReader[A] {
   * Mixin for applying an arbitrary gap-detection to an [[EventReader]].
   */
 trait GapDetectionEventReader[A] extends EventReader[A] with GapDetection {
-  implicit def ec: ExecutionContext
+  implicit def executionContext: ExecutionContext
 
   abstract override def readEvents(fromSequenceNr: Long, maxItems: Int): Future[Seq[EventRecord[A]]] = {
     super.readEvents(fromSequenceNr, maxItems).map(_.filter(gapLess(fromSequenceNr)))

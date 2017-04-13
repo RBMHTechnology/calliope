@@ -16,15 +16,20 @@
 
 package com.rbmhtechnology.calliope
 
-import java.time.Instant
+import net.manub.embeddedkafka._
 
-import scala.collection.immutable.Seq
+object KafkaServer {
+  import EmbeddedKafkaConfig.defaultConfig
 
-object EventRecords {
+  def kafkaPort: Int =
+    defaultConfig.kafkaPort
 
-  def eventRecord(sequenceNr: Long): EventRecord[String] =
-    EventRecord(s"payload-$sequenceNr", "test-source", sequenceNr, Instant.ofEpochMilli(sequenceNr * 100), "topic", s"aggregate-$sequenceNr")
+  def zookeeperPort: Int =
+    defaultConfig.zooKeeperPort
 
-  def eventRecords(fromSnr: Long, toSnr: Long): Seq[EventRecord[String]] =
-    (fromSnr to toSnr).map(eventRecord)
+  def start(): Unit =
+    EmbeddedKafka.start()(defaultConfig.copy(customBrokerProperties = Map("num.partitions" -> "3")))
+
+  def stop(): Unit =
+    EmbeddedKafka.stop()
 }

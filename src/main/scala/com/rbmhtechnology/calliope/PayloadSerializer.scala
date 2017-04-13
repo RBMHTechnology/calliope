@@ -16,15 +16,22 @@
 
 package com.rbmhtechnology.calliope
 
-import java.time.Instant
+import akka.actor.ActorSystem
+import com.rbmhtechnology.calliope.serializer.CommonFormats.PayloadFormat
+import com.rbmhtechnology.calliope.serializer.DelegatingStringManifestPayloadSerializer
 
-import scala.collection.immutable.Seq
+object PayloadSerializer {
+  def apply()(implicit system: ActorSystem): PayloadSerializer =
+    new PayloadSerializer()
+}
 
-object EventRecords {
+class PayloadSerializer(implicit system: ActorSystem) {
 
-  def eventRecord(sequenceNr: Long): EventRecord[String] =
-    EventRecord(s"payload-$sequenceNr", "test-source", sequenceNr, Instant.ofEpochMilli(sequenceNr * 100), "topic", s"aggregate-$sequenceNr")
+  private val serializer = DelegatingStringManifestPayloadSerializer(system)
 
-  def eventRecords(fromSnr: Long, toSnr: Long): Seq[EventRecord[String]] =
-    (fromSnr to toSnr).map(eventRecord)
+  def deserialize(eventBytes: Array[Byte]): Any =
+    serializer.payload(PayloadFormat.parseFrom(eventBytes))
+
+  def serialize(event: Any): Array[Byte] =
+    serializer.payloadFormatBuilder(event.asInstanceOf[AnyRef]).build().toByteArray
 }

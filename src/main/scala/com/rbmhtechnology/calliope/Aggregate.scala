@@ -14,16 +14,8 @@
  * limitations under the License.
  */
 
-syntax = "proto3";
+package com.rbmhtechnology.calliope
 
-option java_package = "com.rbmhtechnology.calliope.serializer";
-option optimize_for = SPEED;
-
-import "CommonFormats.proto";
-
-message SequencedMessageFormat {
-  PayloadFormat payload = 1;
-  string sourceId = 2;
-  int64 sequenceNo = 3;
-  int64 creationTimestamp = 4;
+trait Aggregate[A] {
+  def aggregateId(event: A): String
 }

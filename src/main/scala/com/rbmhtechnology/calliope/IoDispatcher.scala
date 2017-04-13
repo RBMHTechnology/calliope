@@ -16,15 +16,13 @@
 
 package com.rbmhtechnology.calliope
 
-import java.time.Instant
+import akka.actor.ActorSystem
+import akka.dispatch.MessageDispatcher
 
-import scala.collection.immutable.Seq
+trait IoDispatcher {
 
-object EventRecords {
+  def system: ActorSystem
 
-  def eventRecord(sequenceNr: Long): EventRecord[String] =
-    EventRecord(s"payload-$sequenceNr", "test-source", sequenceNr, Instant.ofEpochMilli(sequenceNr * 100), "topic", s"aggregate-$sequenceNr")
-
-  def eventRecords(fromSnr: Long, toSnr: Long): Seq[EventRecord[String]] =
-    (fromSnr to toSnr).map(eventRecord)
+  implicit lazy val ioDispatcher: MessageDispatcher =
+    system.dispatchers.lookup("calliope.dispatchers.io-dispatcher")
 }

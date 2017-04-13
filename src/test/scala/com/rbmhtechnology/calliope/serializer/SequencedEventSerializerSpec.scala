@@ -16,36 +16,38 @@
 
 package com.rbmhtechnology.calliope.serializer
 
+import java.time.Instant
+
 import akka.actor.ActorSystem
 import akka.serialization.{SerializationExtension, SerializerWithStringManifest}
 import akka.testkit.TestKit
-import com.rbmhtechnology.calliope.{SequencedMessage, SpecWords, StopSystemAfterAll}
+import com.rbmhtechnology.calliope.{SequencedEvent, SpecWords, StopSystemAfterAll}
 import org.scalatest.{MustMatchers, WordSpecLike}
 
-class SequencedMessageSerializerSpec extends TestKit(ActorSystem("test"))
+class SequencedEventSerializerSpec extends TestKit(ActorSystem("test"))
   with WordSpecLike with MustMatchers with StopSystemAfterAll with SpecWords {
 
   import Payloads._
-  import SequencedMessageSerializer._
+  import SequencedEventSerializer._
 
-  def sequencedMessage(payload: AnyRef): SequencedMessage[AnyRef] =
-    SequencedMessage(payload, "sourceId", 1, 1000)
+  def sequencedEvent(payload: AnyRef): SequencedEvent[AnyRef] =
+    SequencedEvent(payload, "sourceId", 1, Instant.ofEpochMilli(1000))
 
   val serialization = SerializationExtension(system)
-  val serializer: SerializerWithStringManifest = serialization.serializerFor(classOf[SequencedMessage[_]]).asInstanceOf[SerializerWithStringManifest]
+  val serializer: SerializerWithStringManifest = serialization.serializerFor(classOf[SequencedEvent[_]]).asInstanceOf[SerializerWithStringManifest]
 
-  "A SequencedMessageSerializer" when invoked {
-    "with a SequencedMessage" must {
+  "A SequencedEventSerializer" when invoked {
+    "with a SequencedEvent" must {
       "serialize and deserialize a payload backed by a StringManifestSerializer" in {
-        val original = sequencedMessage(StringManifestSerializablePayload("payload"))
+        val original = sequencedEvent(StringManifestSerializablePayload("payload"))
 
         val bytes = serializer.toBinary(original)
-        val deserialized = serializer.fromBinary(bytes, SequencedMessageManifest)
+        val deserialized = serializer.fromBinary(bytes, SequencedEventManifest)
 
         deserialized mustBe original
       }
       "throw an IllegalArgumentException for a payload backed by a plain Serializer" in {
-        val original = sequencedMessage(PlainSerializablePayload("payload"))
+        val original = sequencedEvent(PlainSerializablePayload("payload"))
 
         intercept[IllegalArgumentException] {
           serializer.toBinary(original)
@@ -54,7 +56,7 @@ class SequencedMessageSerializerSpec extends TestKit(ActorSystem("test"))
     }
     "without a string-manifest" must {
       "throw an IllegalArgumentException" in {
-        val original = sequencedMessage(StringManifestSerializablePayload("payload"))
+        val original = sequencedEvent(StringManifestSerializablePayload("payload"))
         val bytes = serializer.toBinary(original)
 
         intercept[IllegalArgumentException] {
@@ -69,7 +71,7 @@ class SequencedMessageSerializerSpec extends TestKit(ActorSystem("test"))
         }
       }
       "throw an IllegalArgumentException on deserialization" in {
-        val original = sequencedMessage(StringManifestSerializablePayload("payload"))
+        val original = sequencedEvent(StringManifestSerializablePayload("payload"))
         val bytes = serializer.toBinary(original)
 
         intercept[IllegalArgumentException] {
