@@ -17,6 +17,7 @@
 package com.rbmhtechnology.calliope.serializer.kafka
 
 import java.util
+import java.util.function.{Function => JFunction}
 
 import akka.actor.ActorSystem
 import com.rbmhtechnology.calliope.serializer.CommonFormats.PayloadFormat
@@ -32,8 +33,11 @@ trait NoOpClose {
 }
 
 object PayloadFormatSerializer {
-  def apply[A <: AnyRef](implicit system: ActorSystem): PayloadFormatSerializer[A] =
+  def apply[A <: AnyRef]()(implicit system: ActorSystem): PayloadFormatSerializer[A] =
     new PayloadFormatSerializer[A](DelegatingStringManifestPayloadSerializer(system))
+
+  def create[A <: AnyRef](system: ActorSystem): PayloadFormatSerializer[A] =
+    apply()(system)
 }
 
 class PayloadFormatSerializer[A <: AnyRef] private(serializer: PayloadSerializer) extends Serializer[A]
@@ -47,8 +51,14 @@ object PayloadFormatDeserializer {
   def apply[A](payloadMapper: AnyRef => A)(implicit system: ActorSystem): PayloadFormatDeserializer[A] =
     new PayloadFormatDeserializer[A](DelegatingStringManifestPayloadSerializer(system), payloadMapper)
 
-  def apply(implicit system: ActorSystem): PayloadFormatDeserializer[AnyRef] =
+  def apply()(implicit system: ActorSystem): PayloadFormatDeserializer[AnyRef] =
     apply[AnyRef](identity)
+
+  def create[A](payloadMapper: JFunction[AnyRef, A], system: ActorSystem): PayloadFormatDeserializer[A] =
+    apply(payloadMapper.apply)(system)
+
+  def create[A](system: ActorSystem): PayloadFormatDeserializer[AnyRef] =
+    apply()(system)
 }
 
 class PayloadFormatDeserializer[A] private(serializer: PayloadSerializer, payloadMapper: AnyRef => A) extends Deserializer[A]
