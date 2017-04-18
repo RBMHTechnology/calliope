@@ -26,6 +26,9 @@ import com.rbmhtechnology.calliope.serializer.SequencedEventFormats.SequencedEve
 class DelegatingSequencedEventSerializer(system: ExtendedActorSystem)
   extends SequencedEventSerializer(system, DelegatingStringManifestPayloadSerializer(system))
 
+class DelegatingSequencedEventSerializerWithTombstoneDeserializer(system: ExtendedActorSystem)
+  extends SequencedEventSerializer(system, DelegatingStringManifestPayloadSerializerWithTombstoneDeserializer(system))
+
 object SequencedEventSerializer {
   val SequencedEventManifest = "com.rbmhtechnology.calliope.v1.SequencedEventManifest"
 }

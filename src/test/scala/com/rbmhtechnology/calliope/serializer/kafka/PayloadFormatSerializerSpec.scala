@@ -18,8 +18,13 @@ package com.rbmhtechnology.calliope.serializer.kafka
 
 import akka.actor.ActorSystem
 import akka.testkit.TestKit
+import com.google.protobuf.ByteString
+import com.rbmhtechnology.calliope.serializer.CommonFormats.PayloadFormat
+import com.rbmhtechnology.calliope.serializer.Tombstone
 import com.rbmhtechnology.calliope.{SpecWords, StopSystemAfterAll}
 import org.scalatest.{MustMatchers, WordSpecLike}
+
+import scala.util.Random
 
 class PayloadFormatSerializerSpec extends TestKit(ActorSystem("test"))
   with WordSpecLike with MustMatchers with StopSystemAfterAll with SpecWords {
@@ -67,5 +72,41 @@ class PayloadFormatSerializerSpec extends TestKit(ActorSystem("test"))
         }
       }
     }
+    "a payload backed by an unknown serializer" must {
+      "throw an java.io.NotSerializableException" in {
+        val format = PayloadFormat.newBuilder()
+          .setSerializerId(123)
+          .setPayloadManifest("unknown-manifest")
+          .setPayload(ByteString.copyFrom(randomBytes)).build()
+        val deserializer = PayloadFormatDeserializer.apply
+
+        intercept[java.io.NotSerializableException] {
+          deserializer.deserialize("test", format.toByteArray)
+        }
+      }
+
+      "be deserialized to a Tombstone class object" in {
+        val bytes: Array[Byte] = randomBytes
+
+        val format = PayloadFormat.newBuilder()
+          .setSerializerId(123)
+          .setPayloadManifest("unknown-manifest")
+          .setPayload(ByteString.copyFrom(bytes)).build()
+        val deserializer = PayloadFormatDeserializer.apply(identity, true)(system)
+
+        val deserialized = deserializer.deserialize("test", format.toByteArray)
+        val tombstone = deserialized.asInstanceOf[Tombstone]
+
+        tombstone.bytes.sameElements(bytes) mustBe true
+        tombstone.serializerId mustBe 123
+        tombstone.manifest mustBe "unknown-manifest"
+      }
+    }
+  }
+
+  private def randomBytes = {
+    val bytes = new Array[Byte](20)
+    Random.nextBytes(bytes)
+    bytes
   }
 }
