@@ -21,7 +21,7 @@ import java.util.function.{Function => JFunction}
 
 import akka.actor.ActorSystem
 import com.rbmhtechnology.calliope.serializer.CommonFormats.PayloadFormat
-import com.rbmhtechnology.calliope.serializer.{DelegatingStringManifestPayloadSerializer, PayloadSerializer}
+import com.rbmhtechnology.calliope.serializer.{DelegatingStringManifestPayloadSerializer, DelegatingStringManifestPayloadSerializerWithTombstoneDeserializer, PayloadSerializer}
 import org.apache.kafka.common.serialization.{Deserializer, Serializer}
 
 trait NoOpConfiguration {
@@ -48,8 +48,12 @@ class PayloadFormatSerializer[A <: AnyRef] private(serializer: PayloadSerializer
 }
 
 object PayloadFormatDeserializer {
-  def apply[A](payloadMapper: AnyRef => A)(implicit system: ActorSystem): PayloadFormatDeserializer[A] =
-    new PayloadFormatDeserializer[A](DelegatingStringManifestPayloadSerializer(system), payloadMapper)
+  def apply[A](payloadMapper: AnyRef => A, withTombstoneDeserializer: Boolean = false)(implicit system: ActorSystem): PayloadFormatDeserializer[A] = {
+    withTombstoneDeserializer match {
+      case false => new PayloadFormatDeserializer[A](DelegatingStringManifestPayloadSerializer(system), payloadMapper)
+      case _ => new PayloadFormatDeserializer[A](DelegatingStringManifestPayloadSerializerWithTombstoneDeserializer(system), payloadMapper)
+    }
+  }
 
   def apply()(implicit system: ActorSystem): PayloadFormatDeserializer[AnyRef] =
     apply[AnyRef](identity)
@@ -59,6 +63,13 @@ object PayloadFormatDeserializer {
 
   def create[A](system: ActorSystem): PayloadFormatDeserializer[AnyRef] =
     apply()(system)
+
+  def createWithTombstoneSerializer[A](payloadMapper: JFunction[AnyRef, A], system: ActorSystem): PayloadFormatDeserializer[A] =
+    apply(payloadMapper.apply, true)(system)
+
+  def createWithTombstoneSerializer[A](system: ActorSystem): PayloadFormatDeserializer[AnyRef] =
+    apply(identity, true)(system)
+
 }
 
 class PayloadFormatDeserializer[A] private(serializer: PayloadSerializer, payloadMapper: AnyRef => A) extends Deserializer[A]

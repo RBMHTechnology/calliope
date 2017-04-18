@@ -20,6 +20,7 @@ import akka.actor.ActorSystem
 import akka.serialization.{NullSerializer, SerializationExtension, SerializerWithStringManifest}
 import com.google.protobuf.ByteString
 import com.rbmhtechnology.calliope.serializer.CommonFormats.PayloadFormat
+import scala.util.Try
 
 trait PayloadSerializer {
   def payloadFormatBuilder(payload: AnyRef): PayloadFormat.Builder
@@ -55,5 +56,20 @@ class DelegatingStringManifestPayloadSerializer(system: ActorSystem) extends Pay
       payloadFormat.getPayload.toByteArray,
       payloadFormat.getSerializerId,
       payloadFormat.getPayloadManifest).get
+  }
+}
+
+case class Tombstone(serializerId: Int, manifest: String, bytes: Array[Byte])
+
+object DelegatingStringManifestPayloadSerializerWithTombstoneDeserializer {
+  def apply(system: ActorSystem): DelegatingStringManifestPayloadSerializerWithTombstoneDeserializer =
+    new DelegatingStringManifestPayloadSerializerWithTombstoneDeserializer(system)
+}
+
+class DelegatingStringManifestPayloadSerializerWithTombstoneDeserializer(system: ActorSystem) extends DelegatingStringManifestPayloadSerializer(system = system) {
+  override def payload(payloadFormat: PayloadFormat): AnyRef = {
+    Try
+      .apply(super.payload(payloadFormat))
+      .getOrElse(new Tombstone(payloadFormat.getSerializerId, payloadFormat.getPayloadManifest, payloadFormat.getPayload.toByteArray))
   }
 }
