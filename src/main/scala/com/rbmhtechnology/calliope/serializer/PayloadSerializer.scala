@@ -21,10 +21,19 @@ import akka.serialization.{NullSerializer, SerializationExtension, SerializerWit
 import com.google.protobuf.ByteString
 import com.rbmhtechnology.calliope.serializer.CommonFormats.PayloadFormat
 
+import scala.util.control.NonFatal
+
 trait PayloadSerializer {
   def payloadFormatBuilder(payload: AnyRef): PayloadFormat.Builder
+
   def payload(payloadFormat: PayloadFormat): AnyRef
 }
+
+object PayloadNotDeserializableException {
+  def apply(msg: String, cause: Throwable, payloadFormat: PayloadFormat): PayloadNotDeserializableException = PayloadNotDeserializableException(msg, cause, payloadFormat.getSerializerId, payloadFormat.getPayloadManifest, payloadFormat.getPayload.toByteArray)
+}
+
+case class PayloadNotDeserializableException(msg: String, cause: Throwable, serializerId: Int, payloadManifest: String, bytes: Array[Byte]) extends RuntimeException
 
 object DelegatingStringManifestPayloadSerializer {
   def apply(system: ActorSystem): DelegatingStringManifestPayloadSerializer =
@@ -51,9 +60,13 @@ class DelegatingStringManifestPayloadSerializer(system: ActorSystem) extends Pay
     if (payloadFormat.getPayloadManifest.isEmpty) {
       throw new IllegalArgumentException(s"No payload manifest provided in payload format")
     }
-    SerializationExtension(system).deserialize(
-      payloadFormat.getPayload.toByteArray,
-      payloadFormat.getSerializerId,
-      payloadFormat.getPayloadManifest).get
+    try {
+      SerializationExtension(system).deserialize(
+        payloadFormat.getPayload.toByteArray,
+        payloadFormat.getSerializerId,
+        payloadFormat.getPayloadManifest).get
+    } catch {
+      case NonFatal(err) => throw PayloadNotDeserializableException("Unable to deserialize payload", err, payloadFormat)
+    }
   }
 }
