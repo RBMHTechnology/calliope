@@ -18,16 +18,22 @@ package com.rbmhtechnology.calliope.javadsl
 
 import java.time.{Duration => JDuration}
 import java.util.concurrent.CompletableFuture
-import java.util.function.Consumer
+import java.util.function.{Consumer, Function => JFunction}
 
+import akka.NotUsed
 import akka.actor.ActorSystem
+import akka.kafka.{ProducerMessage, ProducerSettings}
+import akka.stream.javadsl.Flow
 import com.rbmhtechnology.calliope.DurationConverters._
-import com.rbmhtechnology.calliope.scaladsl
+import com.rbmhtechnology.calliope.{SequencedEvent, scaladsl}
 import com.typesafe.config.Config
 
 object TransactionalEventProducer {
 
   import EventStore._
+
+  type ProducerFlow[A] = Flow[ProducerMessage.Message[String, SequencedEvent[A], Unit], ProducerMessage.Result[String, SequencedEvent[A], Unit], NotUsed]
+  type ProducerProvider[A] = JFunction[ProducerSettings[String, SequencedEvent[A]], ProducerFlow[A]]
 
   def create[A](sourceId: String, topic: String, eventStore: EventStore, system: ActorSystem): TransactionalEventProducer[A] = {
     new TransactionalEventProducer[A](scaladsl.TransactionalEventProducer[A](sourceId, topic, eventStore.asScala)(system))
@@ -107,6 +113,9 @@ object TransactionalEventProducer {
 
     def withProducerProperty(key: String, value: String): Settings[A] =
       copy(delegate.withProducerProperty(key, value))
+
+    def withProducerProvider(producerProvider: ProducerProvider[A]): Settings[A] =
+      copy(delegate.withProducerProvider(s => producerProvider.apply(s).asScala))
 
     private def copy(delegate: scaladsl.TransactionalEventProducer.Settings[A]): Settings[A] =
       new Settings(delegate)
