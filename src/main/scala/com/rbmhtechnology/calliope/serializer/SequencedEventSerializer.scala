@@ -31,6 +31,7 @@ object SequencedEventSerializer {
 }
 
 abstract class SequencedEventSerializer(system: ExtendedActorSystem, payloadSerializer: PayloadSerializer) extends SerializerWithStringManifest {
+
   import SequencedEventSerializer._
 
   override def identifier: Int = 996248934

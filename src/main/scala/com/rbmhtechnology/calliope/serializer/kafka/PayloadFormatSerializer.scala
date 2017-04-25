@@ -18,11 +18,15 @@ package com.rbmhtechnology.calliope.serializer.kafka
 
 import java.util
 import java.util.function.{Function => JFunction}
+import javaslang.control.{Try => JTry}
 
 import akka.actor.ActorSystem
 import com.rbmhtechnology.calliope.serializer.CommonFormats.PayloadFormat
 import com.rbmhtechnology.calliope.serializer.{DelegatingStringManifestPayloadSerializer, PayloadSerializer}
 import org.apache.kafka.common.serialization.{Deserializer, Serializer}
+
+import scala.util.control.NonFatal
+import scala.util.{Failure, Success, Try}
 
 trait NoOpConfiguration {
   def configure(configs: util.Map[String, _], isKey: Boolean): Unit = {}
@@ -48,22 +52,36 @@ class PayloadFormatSerializer[A <: AnyRef] private(serializer: PayloadSerializer
 }
 
 object PayloadFormatDeserializer {
-  def apply[A](payloadMapper: AnyRef => A)(implicit system: ActorSystem): PayloadFormatDeserializer[A] =
-    new PayloadFormatDeserializer[A](DelegatingStringManifestPayloadSerializer(system), payloadMapper)
 
   def apply()(implicit system: ActorSystem): PayloadFormatDeserializer[AnyRef] =
     apply[AnyRef](identity)
 
-  def create[A](payloadMapper: JFunction[AnyRef, A], system: ActorSystem): PayloadFormatDeserializer[A] =
-    apply(payloadMapper.apply)(system)
+  def apply[A](payloadMapper: AnyRef => A)(implicit system: ActorSystem): PayloadFormatDeserializer[A] =
+    instance(payloadMapper, err => throw err)
+
+  def attempt[A](payloadMapper: AnyRef => A)(implicit system: ActorSystem): PayloadFormatDeserializer[Try[A]] =
+    instance(payloadMapper.andThen(Success(_)), Failure(_))
 
   def create[A](system: ActorSystem): PayloadFormatDeserializer[AnyRef] =
     apply()(system)
+
+  def create[A](payloadMapper: JFunction[AnyRef, A], system: ActorSystem): PayloadFormatDeserializer[A] =
+    apply(payloadMapper.apply)(system)
+
+  def createAttempt[A](payloadMapper: JFunction[AnyRef, A], system: ActorSystem): PayloadFormatDeserializer[JTry[A]] =
+    instance[JTry[A]](payloadMapper.andThen[JTry[A]](JTry.success(_)).apply, JTry.failure)(system)
+
+  private def instance[A](payloadMapper: AnyRef => A, failureMapper: Throwable => A)(implicit system: ActorSystem): PayloadFormatDeserializer[A] =
+    new PayloadFormatDeserializer[A](DelegatingStringManifestPayloadSerializer(system), payloadMapper, failureMapper)
 }
 
-class PayloadFormatDeserializer[A] private(serializer: PayloadSerializer, payloadMapper: AnyRef => A) extends Deserializer[A]
+class PayloadFormatDeserializer[A] private(serializer: PayloadSerializer, payloadMapper: AnyRef => A, failureMapper: Throwable => A) extends Deserializer[A]
   with NoOpConfiguration with NoOpClose {
 
   override def deserialize(topic: String, data: Array[Byte]): A =
-    payloadMapper(serializer.payload(PayloadFormat.parseFrom(data)))
+    try {
+      payloadMapper(serializer.payload(PayloadFormat.parseFrom(data)))
+    } catch {
+      case NonFatal(err) => failureMapper(err)
+    }
 }
