@@ -53,8 +53,9 @@ object ProducerFlow {
   }
 
   object Committable {
-    implicit def committableConsumerMessage[K, V]: Committable[ConsumerMessage.CommittableMessage[K, V]] =
-      (message: CommittableMessage[K, V]) => message.committableOffset
+    implicit def committableConsumerMessage[K, V]: Committable[ConsumerMessage.CommittableMessage[K, V]] = new Committable[ConsumerMessage.CommittableMessage[K, V]] {
+      override def offset(message: CommittableMessage[K, V]): CommittableOffset = message.committableOffset
+    }
   }
 
   private[this] val instance = new ProducerFlow[Any]{}

@@ -27,6 +27,7 @@ import org.apache.kafka.common.serialization.{Deserializer, Serializer}
 
 import scala.util.control.NonFatal
 import scala.util.{Failure, Success, Try}
+import scala.compat.java8.FunctionConverters._
 
 trait NoOpConfiguration {
   def configure(configs: util.Map[String, _], isKey: Boolean): Unit = {}
@@ -69,7 +70,7 @@ object PayloadFormatDeserializer {
     apply(payloadMapper.apply)(system)
 
   def createAttempt[A](payloadMapper: JFunction[AnyRef, A], system: ActorSystem): PayloadFormatDeserializer[JTry[A]] =
-    instance[JTry[A]](payloadMapper.andThen[JTry[A]](JTry.success(_)).apply, JTry.failure)(system)
+    instance[JTry[A]](payloadMapper.asScala.andThen[JTry[A]](JTry.success), JTry.failure)(system)
 
   private def instance[A](payloadMapper: AnyRef => A, failureMapper: Throwable => A)(implicit system: ActorSystem): PayloadFormatDeserializer[A] =
     new PayloadFormatDeserializer[A](DelegatingStringManifestPayloadSerializer(system), payloadMapper, failureMapper)

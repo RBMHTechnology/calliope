@@ -25,6 +25,7 @@ import akka.util.Timeout
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.{BeforeAndAfterEach, MustMatchers, WordSpecLike}
 
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
@@ -65,8 +66,9 @@ class EventDeletionSpec extends TestKit(ActorSystem("test"))
     eventDeletionProbe = TestProbe()
   }
 
-  def actorEventDeleter(deletionProbe: TestProbe = eventDeletionProbe): EventDeleter =
-    (toSequenceNr: Long) => (deletionProbe.ref ? toSequenceNr).map(_.asInstanceOf[Unit])
+  def actorEventDeleter(deletionProbe: TestProbe = eventDeletionProbe): EventDeleter = new EventDeleter {
+    override def deleteEvents(toSequenceNr: Long): Future[Unit] = (deletionProbe.ref ? toSequenceNr).map(_.asInstanceOf[Unit])
+  }
 
   "An EventDeletionSink" when {
     "elements are pushed from upstream" when {

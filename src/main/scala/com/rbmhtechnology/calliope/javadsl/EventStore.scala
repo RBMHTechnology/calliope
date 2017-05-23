@@ -40,7 +40,9 @@ object EventStore {
         store.readEvents(fromSequenceNr, limit).asScala.toVector
 
       override def writeEvent(event: Array[Byte], topic: String, aggregateId: String, onCommit: => Unit): Unit =
-        store.writeEvent(event, topic, aggregateId, () => onCommit)
+        store.writeEvent(event, topic, aggregateId, new Runnable {
+          override def run(): Unit = onCommit
+        })
 
       override def deleteEvents(toSequenceNr: Long): Unit =
         store.deleteEvents(toSequenceNr)
