@@ -6,7 +6,8 @@ lazy val commonSettings = Seq(
   organization := "com.rbmhtechnology",
   name := "calliope",
   version := "0.2.0-SNAPSHOT",
-  scalaVersion := "2.12.1"
+  scalaVersion := "2.11.11",
+  crossScalaVersions := Seq("2.11.11", "2.12.1")
 )
 
 lazy val testSettings = Defaults.itSettings ++ Seq(
@@ -32,15 +33,15 @@ lazy val dependencies = Seq(
   "com.typesafe.akka"       %% "akka-stream-kafka"        % "0.13",
   "org.apache.kafka"        %  "kafka-clients"            % Version.Kafka,
   "org.apache.kafka"        %  "kafka-streams"            % Version.Kafka,
-  "org.scala-lang.modules"  %  "scala-java8-compat_2.12"  % "0.8.0",
-  "io.javaslang"            % "javaslang"                 % "2.0.6",
+  "org.scala-lang.modules"  %% "scala-java8-compat"       % "0.8.0",
+  "io.javaslang"            %  "javaslang"                % "2.0.6",
 
   "org.scalatest"           %% "scalatest"                % "3.0.1"      % "it,test",
   "com.typesafe.akka"       %% "akka-stream-testkit"      % Version.Akka % "it,test",
   "com.typesafe.akka"       %% "akka-testkit"             % Version.Akka % "it,test",
   "net.manub"               %% "scalatest-embedded-kafka" % "0.11.0"     % "it",
 
-  "com.google.protobuf"     % "protobuf-java"             % Version.Protobuf
+  "com.google.protobuf"     %  "protobuf-java"            % Version.Protobuf
 )
 
 lazy val root = (project in file("."))

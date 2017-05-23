@@ -24,11 +24,13 @@ case class EventRecord[A](payload: A, sourceId: String, sequenceNr: Long, creati
 
 object EventRecord {
 
-  implicit def sequenced[A]: Sequenced[EventRecord[A]] =
-    (event: EventRecord[A]) => event.sequenceNr
+  implicit def sequenced[A]: Sequenced[EventRecord[A]] = new Sequenced[EventRecord[A]] {
+    override def sequenceNr(event: EventRecord[A]): Long = event.sequenceNr
+  }
 
-  implicit def timestamped[A]: Timestamped[EventRecord[A]] =
-    (event: EventRecord[A]) => event.creationTimestamp
+  implicit def timestamped[A]: Timestamped[EventRecord[A]] = new Timestamped[EventRecord[A]] {
+    override def timestamp(event: EventRecord[A]): Instant = event.creationTimestamp
+  }
 
   implicit def producible[A] = new Producible[EventRecord[A], String, SequencedEvent[A]] {
     override def topic(event: EventRecord[A]): String =

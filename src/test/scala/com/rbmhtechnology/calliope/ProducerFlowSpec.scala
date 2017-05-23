@@ -47,8 +47,10 @@ object ProducerFlowSpec {
         override def timestamp(message: ProducibleMessage): Option[Long] = message.timestamp
       }
 
-    implicit val committable: Committable[ProducibleMessage] =
-      (_: ProducibleMessage) => committableOffset(PartitionOffset(GroupTopicPartition("group", "topic", 0), 1L))
+    implicit val committable: Committable[ProducibleMessage] = new Committable[ProducibleMessage] {
+      override def offset(message: ProducibleMessage): ConsumerMessage.CommittableOffset =
+        committableOffset(PartitionOffset(GroupTopicPartition("group", "topic", 0), 1L))
+    }
   }
 
   def committableOffset(offset: PartitionOffset): ConsumerMessage.CommittableOffset =

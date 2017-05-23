@@ -29,6 +29,7 @@ import com.rbmhtechnology.calliope.{SpecWords, StopSystemAfterAll}
 import org.scalatest.{MustMatchers, WordSpecLike}
 
 import scala.util.Random
+import scala.compat.java8.FunctionConverters._
 
 class PayloadFormatSerializerSpec extends TestKit(ActorSystem("test"))
   with WordSpecLike with MustMatchers with StopSystemAfterAll with SpecWords {
@@ -130,7 +131,7 @@ class PayloadFormatSerializerSpec extends TestKit(ActorSystem("test"))
         deserializer.deserialize(topic, sequencedEventUnknownPayload.toByteArray) must failWith[PayloadNotDeserializableException]
       }
       "return a vavr.Failure with attempt using Java API" in {
-        val deserializer = PayloadFormatDeserializer.createAttempt((x: AnyRef) => x, system)
+        val deserializer = PayloadFormatDeserializer.createAttempt(asJavaFunction((x: AnyRef) => x), system)
 
         deserializer.deserialize(topic, sequencedEventUnknownPayload.toByteArray).isFailure mustBe true
       }
