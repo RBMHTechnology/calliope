@@ -67,6 +67,7 @@ object TransactionalEventProducerSpec {
 
   case class WritableEventStore() extends EventStore {
     var records: Map[Long, (String, String, Instant, Array[Byte])] = SortedMap.empty
+    var deletedSequenceNrs = Vector.empty[Long]
     private var nextSnr = 1L
 
     override def readEvents(fromSequenceNr: Long, limit: Int): Seq[StoredEvent] = {
@@ -85,6 +86,7 @@ object TransactionalEventProducerSpec {
     }
 
     override def deleteEvents(toSequenceNr: Long): Unit = {
+      deletedSequenceNrs = deletedSequenceNrs :+ toSequenceNr
       records = records.dropWhile(_._1 <= toSequenceNr)
     }
 
@@ -151,6 +153,10 @@ class TransactionalEventProducerSpec extends KafkaSpec with MustMatchers with Ty
   def runTransactionalEventProducer(topic: String, eventStore: EventStore, settings: Settings[Event]): EventWriter[Event] = {
     producer = TransactionalEventProducer(sourceId, topic, eventStore, settings, err => fail("onFailure triggered", err))
     producer.run()
+  }
+
+  def sleep(duration: Duration): Unit = {
+    Thread.sleep(duration.toMillis)
   }
 
   "A TransactionalEventProducer" when {
@@ -229,16 +235,37 @@ class TransactionalEventProducerSpec extends KafkaSpec with MustMatchers with Ty
       "delete produced events from the underlying event store" in {
         val (topic, consumer) = topicConsumer()
         val eventStore = WritableEventStore()
-        val writer = runTransactionalEventProducer(topic, eventStore, settings.withDeleteInterval(500.millis))
+        val deleteInterval = 500.millis
+        val writer = runTransactionalEventProducer(topic, eventStore, settings.withReadBufferSize(10).withDeleteInterval(deleteInterval))
 
         writer.writeEvent(Event("1", "agg1"))
+        consumer.requestNext()
+
+        sleep(deleteInterval * 1.5)
         writer.writeEvent(Event("2", "agg1"))
         writer.writeEvent(Event("3", "agg1"))
 
-        consumer.request(3)
-        consumer.expectNextN(3)
+        sleep(deleteInterval * 1.5)
+        writer.writeEvent(Event("4", "agg1"))
+        writer.writeEvent(Event("5", "agg1"))
+        writer.writeEvent(Event("6", "agg1"))
+
+        sleep(deleteInterval * 1.5)
+        writer.writeEvent(Event("7", "agg1"))
+        sleep(deleteInterval / 4)
+        writer.writeEvent(Event("8", "agg1"))
+
+        sleep(deleteInterval * 1.5)
+        writer.writeEvent(Event("9", "agg1"))
+        writer.writeEvent(Event("10", "agg1"))
+
+        consumer.request(9)
+        consumer.expectNextN(9)
+
+        sleep(deleteInterval * 2)
 
         eventStore.records mustBe empty
+        eventStore.deletedSequenceNrs mustBe Seq(1L, 3L, 6L, 8L, 10L)
       }
     }
     "gaps are detected in the event sequence" must {
