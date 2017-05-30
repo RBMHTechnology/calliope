@@ -19,6 +19,8 @@ package com.rbmhtechnology.calliope
 import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.stream.scaladsl.Flow
+import akka.stream.testkit.TestSubscriber
+import akka.stream.testkit.TestSubscriber.OnSubscribe
 import akka.testkit.TestKit
 import org.scalatest.{MustMatchers, WordSpecLike}
 
@@ -80,7 +82,6 @@ class EventReadFlowSpec extends TestKit(ActorSystem("test")) with WordSpecLike w
       "not push elements if event reader is empty" in {
         val (pub, sub) = runFlow(eventReadFlow(eventReader, 10))
 
-
         sub.request(1)
 
         eventReader.setResult(1L -> Success(Seq.empty))
@@ -90,7 +91,6 @@ class EventReadFlowSpec extends TestKit(ActorSystem("test")) with WordSpecLike w
       }
       "stop pushing elements once the event reader is empty" in {
         val (pub, sub) = runFlow(eventReadFlow(eventReader, 5))
-
 
         sub.request(10)
 
@@ -140,13 +140,15 @@ class EventReadFlowSpec extends TestKit(ActorSystem("test")) with WordSpecLike w
       "ignore upstream emissions until demand is propagated from downstream" in {
         val (pub, sub) = runFlow(eventReadFlow(eventReader, 5))
 
+        sub.ensureSubscription()
+
         eventReader.setResult(1L -> Failure(new RuntimeException("should not be called yet")))
         pub.sendNext(Unit)
-
-        sub.request(1)
+        sub.expectNoMsg(1.second)
 
         eventReader.setResult(1L -> Success(Seq.empty))
         pub.sendNext(Unit)
+        sub.request(1)
         sub.expectNoMsg(1.second)
 
         eventReader.setResult(1L -> Success(Seq(eventRecord(1))))

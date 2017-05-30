@@ -16,8 +16,8 @@
 
 package com.rbmhtechnology.calliope
 
-import akka.stream.ThrottleMode
-import akka.stream.scaladsl.{Flow, Keep, Sink, Source}
+import akka.stream.scaladsl.{Flow, Keep, Sink}
+import akka.stream.{Attributes, OverflowStrategy}
 import akka.{Done, NotUsed}
 
 import scala.concurrent.Future
@@ -42,8 +42,7 @@ object EventDeletion {
 
   def sink[A: Sequenced](eventDeleter: EventDeleter, perDuration: FiniteDuration): Sink[A, Future[Done]] =
     Flow[A]
-      .conflate((_, latest) => latest)
-      .throttle(1, perDuration, 1, ThrottleMode.Shaping)
+      .delay(perDuration, OverflowStrategy.dropHead).withAttributes(Attributes.inputBuffer(1, 1))
       .via(flow(eventDeleter, 1))
       .toMat(Sink.ignore)(Keep.right)
 }
