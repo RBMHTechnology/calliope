@@ -107,9 +107,13 @@ class PayloadFormatSerializerSpec extends TestKit(ActorSystem("test"))
       "throw an PayloadNotDeserializableException exception" in {
         val deserializer = PayloadFormatDeserializer.apply
 
-        intercept[PayloadNotDeserializableException] {
+        val e = intercept[PayloadNotDeserializableException] {
           deserializer.deserialize(topic, payloadFormatWithUnknownManifest.toByteArray)
         }
+
+        e.getMessage mustBe e.msg
+        e.getCause mustBe e.cause
+
       }
       "return a Failure with attempt" in {
         val deserializer = PayloadFormatDeserializer.attempt(identity)

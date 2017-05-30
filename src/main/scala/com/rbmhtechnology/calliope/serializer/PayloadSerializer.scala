@@ -33,7 +33,7 @@ object PayloadNotDeserializableException {
   def apply(msg: String, cause: Throwable, payloadFormat: PayloadFormat): PayloadNotDeserializableException = PayloadNotDeserializableException(msg, cause, payloadFormat.getSerializerId, payloadFormat.getPayloadManifest, payloadFormat.getPayload.toByteArray)
 }
 
-case class PayloadNotDeserializableException(msg: String, cause: Throwable, serializerId: Int, payloadManifest: String, bytes: Array[Byte]) extends RuntimeException
+case class PayloadNotDeserializableException(msg: String, cause: Throwable, serializerId: Int, payloadManifest: String, bytes: Array[Byte]) extends RuntimeException(msg, cause)
 
 object DelegatingStringManifestPayloadSerializer {
   def apply(system: ActorSystem): DelegatingStringManifestPayloadSerializer =
@@ -66,7 +66,11 @@ class DelegatingStringManifestPayloadSerializer(system: ActorSystem) extends Pay
         payloadFormat.getSerializerId,
         payloadFormat.getPayloadManifest).get
     } catch {
-      case NonFatal(err) => throw PayloadNotDeserializableException("Unable to deserialize payload", err, payloadFormat)
+      case NonFatal(err) => throw PayloadNotDeserializableException(
+        s"Unable to deserialize payload with serializerId ${payloadFormat.getSerializerId} and manifest ${payloadFormat.getPayloadManifest}",
+        err,
+        payloadFormat
+      )
     }
   }
 }
