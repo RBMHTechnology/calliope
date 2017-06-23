@@ -31,6 +31,8 @@ import com.rbmhtechnology.calliope.scaladsl.TransactionalEventProducer.Settings
 import com.rbmhtechnology.calliope.scaladsl.{EventStore, EventWriter, TransactionalEventProducer}
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.scalactic.TypeCheckedTripleEquals
+import org.scalatest.concurrent.ScalaFutures
+import org.scalatest.time.{Seconds, Span}
 import org.scalatest.{BeforeAndAfterEach, MustMatchers}
 
 import scala.collection.immutable.{Seq, SortedMap}
@@ -114,13 +116,13 @@ object TransactionalEventProducerSpec {
     override def deleteEvents(toSequenceNr: Long): Unit = {
     }
   }
-
 }
 
-class TransactionalEventProducerSpec extends KafkaSpec with MustMatchers with TypeCheckedTripleEquals with BeforeAndAfterEach {
+class TransactionalEventProducerSpec extends KafkaSpec with MustMatchers with TypeCheckedTripleEquals with BeforeAndAfterEach with ScalaFutures {
 
   import TransactionalEventProducerSpec._
 
+  import scala.concurrent.ExecutionContext.Implicits.global
   import scala.concurrent.duration._
 
   private val sourceId = "source-1"
@@ -129,11 +131,13 @@ class TransactionalEventProducerSpec extends KafkaSpec with MustMatchers with Ty
   private val settings = Settings[Event](readBufferSize = 1, readInterval = 500.millis, deleteInterval = 10.seconds, transactionTimeout = 10.seconds, bootstrapServers)
   private var producer: TransactionalEventProducer[Event] = _
 
+  implicit val Timeout: FiniteDuration = 1.second
+
   override protected def afterEach(): Unit = {
     super.afterEach()
 
     if (producer != null) {
-      Await.ready(producer.stop(), Duration(5, SECONDS))
+      Await.ready(producer.terminate(), Timeout)
     }
   }
 
@@ -153,6 +157,7 @@ class TransactionalEventProducerSpec extends KafkaSpec with MustMatchers with Ty
   def runTransactionalEventProducer(topic: String, eventStore: EventStore, settings: Settings[Event]): EventWriter[Event] = {
     producer = TransactionalEventProducer(sourceId, topic, eventStore, settings, err => fail("onFailure triggered", err))
     producer.run()
+    producer.eventWriter()
   }
 
   def sleep(duration: Duration): Unit = {
@@ -331,14 +336,6 @@ class TransactionalEventProducerSpec extends KafkaSpec with MustMatchers with Ty
 
         consumer.requestNext().value().payload mustBe Event("1", "agg1")
       }
-      "use the producer-flow from the configuration file" in {
-        val (topic, consumer) = topicConsumer()
-        val writer = runTransactionalEventProducer(topic, WritableEventStore(), Settings().withBootstrapServers(bootstrapServers))
-
-        writer.writeEvent(Event("1", "agg1"))
-
-        consumer.requestNext().value().payload mustBe Event("1", "agg1")
-      }
     }
     "created with custom settings" must {
       "use the producer-provider configured in the settings" in {
@@ -357,6 +354,55 @@ class TransactionalEventProducerSpec extends KafkaSpec with MustMatchers with Ty
 
         consumer.requestNext().value().payload mustBe Event("1", "agg1")
         flowProbe.expectMsg(Event("1", "agg1"))
+      }
+    }
+    "when stopped" must {
+      val stopSettings = settings.withReadInterval(100.millis).withDeleteInterval(2.seconds)
+
+      "not produce new events" in {
+        val (topic, consumer) = topicConsumer()
+        val eventStore = WritableEventStore()
+        val writer = runTransactionalEventProducer(topic, eventStore, stopSettings)
+
+        whenReady(producer.stop(), timeout(Span(1, Seconds))) { _ =>
+          writer.writeEvent(Event("1", "agg1"))
+
+          consumer
+            .request(1)
+            .expectNoMsg(1.second)
+
+          eventStore.deletedSequenceNrs mustBe empty
+        }
+      }
+      "continue to produce old events after restart" in {
+        val (topic, consumer) = topicConsumer()
+        val writer = runTransactionalEventProducer(topic, WritableEventStore(), settings)
+
+        writer.writeEvent(Event("1", "agg1"))
+        writer.writeEvent(Event("2", "agg2"))
+
+        whenReady(producer.stop(), timeout(Span(1, Seconds))) { _ =>
+          consumer
+            .request(2)
+            .expectNoMsg(1.second)
+
+          whenReady(producer.run(), timeout(Span(1, Seconds))) { _ =>
+            consumer.expectNextN(2).map(e => e.value().payload) must contain inOrder(Event("1", "agg1"), Event("2", "agg2"))
+          }
+        }
+      }
+      "continue to produce new events after restart" in {
+        val (topic, consumer) = topicConsumer()
+        val writer = runTransactionalEventProducer(topic, WritableEventStore(), settings)
+
+        whenReady(producer.stop().flatMap(_ => producer.run()), timeout(Span(2, Seconds))){ _ =>
+          writer.writeEvent(Event("1", "agg1"))
+          writer.writeEvent(Event("2", "agg2"))
+
+          consumer
+            .request(2)
+            .expectNextN(2).map(e => e.value().payload) must contain inOrder(Event("1", "agg1"), Event("2", "agg2"))
+        }
       }
     }
   }

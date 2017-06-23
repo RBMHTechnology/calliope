@@ -23,6 +23,6 @@ trait IoDispatcher {
 
   def system: ActorSystem
 
-  implicit lazy val ioDispatcher: MessageDispatcher =
+  lazy val ioDispatcher: MessageDispatcher =
     system.dispatchers.lookup("calliope.dispatchers.io-dispatcher")
 }
