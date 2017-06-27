@@ -33,9 +33,9 @@ trait EventStore {
 }
 
 private[scaladsl] object EventStoreReader {
-  def withTimestampGapDetection[A](sourceId: String, eventStore: EventStore, transactionTimeout: FiniteDuration)
-                                  (implicit system: ActorSystem, executionContext: ExecutionContext): EventStoreReader[A] =
-    new EventStoreReader[A](sourceId, eventStore) with ReaderTimestampGapDetection[A] {
+  def withBatchGapDetection[A](sourceId: String, eventStore: EventStore, transactionTimeout: FiniteDuration)
+                              (implicit system: ActorSystem, executionContext: ExecutionContext): EventStoreReader[A] =
+    new EventStoreReader[A](sourceId, eventStore) with ReaderBatchGapDetection[A] {
       override def persistenceTimeout: FiniteDuration = transactionTimeout
     }
 }

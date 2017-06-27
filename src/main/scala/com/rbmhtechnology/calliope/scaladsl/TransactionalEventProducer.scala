@@ -154,7 +154,7 @@ class TransactionalEventProducer[A] private(sourceId: String, topic: String, eve
   private implicit val loggingAdapter = Logging(system, getClass)
 
   private val graph = ProducerGraph(
-    EventStoreReader.withTimestampGapDetection(sourceId, eventStore, settings.transactionTimeout)(system, ioDispatcher),
+    EventStoreReader.withBatchGapDetection(sourceId, eventStore, settings.transactionTimeout)(system, ioDispatcher),
     new EventStoreDeleter(eventStore)(ioDispatcher),
     settings)
 
