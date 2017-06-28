@@ -129,8 +129,8 @@ class TransactionalEventProducer[A] private(delegate: scaladsl.TransactionalEven
   /**
     * Starts producing events from the underlying [[EventStore]] to the configured Kafka endpoint.
     *
-    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once event production has started or fails if the
-    * given timeout was exceeded.
+    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once event production has started.
+    * The future may fail with an [[akka.pattern.AskTimeoutException]] if the producer was not able to respond withing the given timeout.
     */
   def run(timeout: JDuration): CompletableFuture[Done] =
     delegate.run()(timeout.toFiniteDuration).toJava.toCompletableFuture
@@ -138,8 +138,8 @@ class TransactionalEventProducer[A] private(delegate: scaladsl.TransactionalEven
   /**
     * Starts producing events from the underlying [[EventStore]] to the configured Kafka endpoint.
     *
-    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once event production has started or fails if the
-    * default-timeout was exceeded.
+    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once event production has started.
+    * The future may fail with an [[akka.pattern.AskTimeoutException]] if the producer was not able to respond withing the given timeout.
     *
     * <p><b>Uses a default-timeout of 5 seconds</b><p>
     */
@@ -149,8 +149,8 @@ class TransactionalEventProducer[A] private(delegate: scaladsl.TransactionalEven
   /**
     * Stops producing events from the underlying [[EventStore]].
     *
-    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once event production has stopped or fails if the
-    * given timeout was exceeded.
+    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once event production has stopped.
+    * The future may fail with an [[akka.pattern.AskTimeoutException]] if the producer was not able to respond withing the given timeout.
     *
     * The TransactionalEventProducer may be started afterwards by invoking `start()` to continue event production.
     *
@@ -166,8 +166,8 @@ class TransactionalEventProducer[A] private(delegate: scaladsl.TransactionalEven
   /**
     * Stops producing events from the underlying [[EventStore]].
     *
-    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once event production has stopped or fails if the
-    * timeout was exceeded.
+    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once event production has stopped.
+    * The future may fail with an [[akka.pattern.AskTimeoutException]] if the producer was not able to respond withing the given timeout.
     *
     * The TransactionalEventProducer may be started afterwards by invoking `start()` to continue event production.
     *
@@ -186,8 +186,8 @@ class TransactionalEventProducer[A] private(delegate: scaladsl.TransactionalEven
     * Terminates the TransactionalEventProducer. No event production can be performed after invoking this method.
     * Should be used for cleanup purposes.
     *
-    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once the component has been terminated or fails if the
-    * given timeout was exceeded.
+    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once the component has been terminated.
+    * The future may fail with an [[akka.pattern.AskTimeoutException]] if the producer was not able to respond withing the given timeout.
     *
     * <p>
     * <b>IMPORTANT:</b>
@@ -202,8 +202,8 @@ class TransactionalEventProducer[A] private(delegate: scaladsl.TransactionalEven
     * Terminates the TransactionalEventProducer. No event production can be performed after invoking this method.
     * Should be used for cleanup purposes.
     *
-    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once the component has been terminated or fails if the
-    * default-timeout was exceeded.
+    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once the component has been terminated.
+    * The future may fail with an [[akka.pattern.AskTimeoutException]] if the producer was not able to respond withing the given timeout.
     *
     * <p><b>Uses a default-timeout of 5 seconds</b></p>
     *

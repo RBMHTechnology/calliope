@@ -32,11 +32,11 @@ import com.rbmhtechnology.calliope.scaladsl.{EventStore, EventWriter, Transactio
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.scalactic.TypeCheckedTripleEquals
 import org.scalatest.concurrent.ScalaFutures
-import org.scalatest.time.{Seconds, Span}
+import org.scalatest.time.{Millis, Seconds, Span}
 import org.scalatest.{BeforeAndAfterEach, MustMatchers}
 
 import scala.collection.immutable.{Seq, SortedMap}
-import scala.concurrent.Await
+import scala.concurrent.{Await, Future}
 
 object TransactionalEventProducerSpec {
 
@@ -132,6 +132,7 @@ class TransactionalEventProducerSpec extends KafkaSpec with MustMatchers with Ty
   private var producer: TransactionalEventProducer[Event] = _
 
   implicit val Timeout: FiniteDuration = 1.second
+  implicit val defaultPatience = PatienceConfig(timeout = Span(2, Seconds), interval = Span(100, Millis))
 
   override protected def afterEach(): Unit = {
     super.afterEach()
@@ -364,7 +365,7 @@ class TransactionalEventProducerSpec extends KafkaSpec with MustMatchers with Ty
         val eventStore = WritableEventStore()
         val writer = runTransactionalEventProducer(topic, eventStore, stopSettings)
 
-        whenReady(producer.stop(), timeout(Span(1, Seconds))) { _ =>
+        whenReady(producer.stop()) { _ =>
           writer.writeEvent(Event("1", "agg1"))
 
           consumer
@@ -381,12 +382,12 @@ class TransactionalEventProducerSpec extends KafkaSpec with MustMatchers with Ty
         writer.writeEvent(Event("1", "agg1"))
         writer.writeEvent(Event("2", "agg2"))
 
-        whenReady(producer.stop(), timeout(Span(1, Seconds))) { _ =>
+        whenReady(producer.stop()) { _ =>
           consumer
             .request(2)
             .expectNoMsg(1.second)
 
-          whenReady(producer.run(), timeout(Span(1, Seconds))) { _ =>
+          whenReady(producer.run()) { _ =>
             consumer.expectNextN(2).map(e => e.value().payload) must contain inOrder(Event("1", "agg1"), Event("2", "agg2"))
           }
         }
@@ -395,13 +396,29 @@ class TransactionalEventProducerSpec extends KafkaSpec with MustMatchers with Ty
         val (topic, consumer) = topicConsumer()
         val writer = runTransactionalEventProducer(topic, WritableEventStore(), settings)
 
-        whenReady(producer.stop().flatMap(_ => producer.run()), timeout(Span(2, Seconds))){ _ =>
+        whenReady(producer.stop().flatMap(_ => producer.run())){ _ =>
           writer.writeEvent(Event("1", "agg1"))
           writer.writeEvent(Event("2", "agg2"))
 
           consumer
             .request(2)
             .expectNextN(2).map(e => e.value().payload) must contain inOrder(Event("1", "agg1"), Event("2", "agg2"))
+        }
+      }
+      "stop after being restarted" in {
+        val (topic, consumer) = topicConsumer()
+        val writer = runTransactionalEventProducer(topic, WritableEventStore(), settings)
+
+        whenReady(Future.sequence(Vector(
+          producer.stop(),
+          producer.run(),
+          producer.stop()
+        ))){ _ =>
+          writer.writeEvent(Event("1", "agg1"))
+
+          consumer
+            .request(1)
+            .expectNoMsg(1.second)
         }
       }
     }
