@@ -244,7 +244,7 @@ private class GraphRunnerSupervisor(graph: ProducerGraph, onFailure: FailureHand
   }
 }
 
-private object ProducerGraphRunner {
+private[calliope] object ProducerGraphRunner {
 
   case object NotifyCommit
   case object RunGraph
@@ -282,7 +282,7 @@ private object ProducerGraphRunner {
     Props(new ProducerGraphRunner(graph))
 }
 
-private class ProducerGraphRunner(graph: ProducerGraph) extends Actor
+private[calliope] class ProducerGraphRunner(graph: ProducerGraph) extends Actor
   with ActorLogging with Stash with FSM[ProducerGraphRunner.State, ProducerGraphRunner.Data] {
 
   import ProducerGraphRunner._
@@ -346,11 +346,7 @@ private class ProducerGraphRunner(graph: ProducerGraph) extends Actor
   }
 
   whenUnhandled {
-    case Event(NotifyCommit, _) =>
-      stay
-
     case Event(ev, _) =>
-      log.info(s"Received event $ev in state $stateName. Event is ignored.")
       stay
   }
 
