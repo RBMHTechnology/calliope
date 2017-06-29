@@ -264,7 +264,7 @@ private[calliope] object ProducerGraphRunner {
 
   case class Data(commitQueue: Option[SourceQueueWithComplete[Unit]] = None,
                   killSwitch: Option[UniqueKillSwitch] = None,
-                  notifyOnStop: immutable.Seq[ActorRef] = Vector.empty) {
+                  notifyOnStop: Option[ActorRef] = None) {
     def withQueue(queue: SourceQueueWithComplete[Unit]): Data =
       copy(commitQueue = Some(queue))
 
@@ -272,10 +272,10 @@ private[calliope] object ProducerGraphRunner {
       copy(killSwitch = Some(killSwitch))
 
     def withNotificationFor(target: ActorRef): Data =
-      copy(notifyOnStop = notifyOnStop :+ target)
+      copy(notifyOnStop = Some(target))
 
-    def withoutNotifications(): Data =
-      copy(notifyOnStop = Vector.empty)
+    def withoutNotification(): Data =
+      copy(notifyOnStop = None)
   }
 
   def props(graph: ProducerGraph): Props =
@@ -342,7 +342,7 @@ private[calliope] class ProducerGraphRunner(graph: ProducerGraph) extends Actor
       log.info("Transactional producer stream stopped.")
       data.notifyOnStop.foreach(_ ! GraphStopped)
       unstashAll()
-      goto(Stopped) using data.withoutNotifications()
+      goto(Stopped) using data.withoutNotification()
   }
 
   whenUnhandled {
