@@ -249,22 +249,23 @@ private[calliope] object ProducerGraphRunner {
   case object NotifyCommit
   case object RunGraph
   case object StopGraph
+  case object GetState
 
   case object GraphStarted
   case object GraphStopped
 
-  private[ProducerGraphRunner] case class RestartGraph(failure: Throwable)
+  case class RestartGraph(failure: Throwable)
 
-  private[ProducerGraphRunner] case class GraphAbortedException() extends RuntimeException
+  case class GraphAbortedException() extends RuntimeException
 
-  private[ProducerGraphRunner] sealed trait State
-  private[ProducerGraphRunner] case object Stopped extends State
-  private[ProducerGraphRunner] case object Stopping extends State
-  private[ProducerGraphRunner] case object Running extends State
+  sealed trait State
+  case object Stopped extends State
+  case object Stopping extends State
+  case object Running extends State
 
-  private[ProducerGraphRunner] case class Data(commitQueue: Option[SourceQueueWithComplete[Unit]] = None,
-                                               killSwitch: Option[UniqueKillSwitch] = None,
-                                               notifyOnStop: immutable.Seq[ActorRef] = Vector.empty) {
+  case class Data(commitQueue: Option[SourceQueueWithComplete[Unit]] = None,
+                  killSwitch: Option[UniqueKillSwitch] = None,
+                  notifyOnStop: immutable.Seq[ActorRef] = Vector.empty) {
     def withQueue(queue: SourceQueueWithComplete[Unit]): Data =
       copy(commitQueue = Some(queue))
 
@@ -346,7 +347,10 @@ private[calliope] class ProducerGraphRunner(graph: ProducerGraph) extends Actor
   }
 
   whenUnhandled {
-    case Event(ev, _) =>
+    case Event(GetState, _) =>
+      stay replying stateName
+
+    case Event(_, _) =>
       stay
   }
 

@@ -18,6 +18,8 @@ package com.rbmhtechnology.calliope
 
 import akka.actor.SupervisorStrategy.Restart
 import akka.actor.{Actor, ActorRef, ActorSystem, Kill, OneForOneStrategy, Props, SupervisorStrategy}
+import akka.pattern
+import akka.pattern.ask
 import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.stream.{KillSwitches, OverflowStrategy}
 import akka.testkit.{ImplicitSender, TestKit, TestProbe}
@@ -27,6 +29,7 @@ import com.rbmhtechnology.calliope.scaladsl.TransactionalEventProducer.ProducerG
 import org.scalatest.{BeforeAndAfterEach, MustMatchers, WordSpecLike}
 
 import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 
 object ProducerGraphRunnerSpec {
 
@@ -51,6 +54,7 @@ object ProducerGraphRunnerSpec {
         graphRunner forward msg
     }
   }
+
 }
 
 class ProducerGraphRunnerSpec extends TestKit(ActorSystem("test"))
@@ -58,6 +62,7 @@ class ProducerGraphRunnerSpec extends TestKit(ActorSystem("test"))
 
   import ProducerGraphRunner._
   import ProducerGraphRunnerSpec._
+  import system.dispatcher
 
   implicit val timeout = Timeout(1.second)
 
@@ -66,10 +71,6 @@ class ProducerGraphRunnerSpec extends TestKit(ActorSystem("test"))
   override protected def beforeEach(): Unit = {
     super.beforeEach()
     eventProbe = TestProbe()
-  }
-
-  private def waitForRestart(): Unit = {
-    Thread.sleep(100)
   }
 
   def producerGraph(probe: TestProbe): ProducerGraph =
@@ -85,6 +86,16 @@ class ProducerGraphRunnerSpec extends TestKit(ActorSystem("test"))
     runner ! RunGraph
     expectMsg(GraphStarted)
     runner
+  }
+
+  def pollForState(runner: ActorRef, state: State, interval: FiniteDuration = 100.millis)(implicit timeout: Timeout): Future[State] = {
+    (runner ? GetState).mapTo[State]
+      .flatMap {
+        case `state` => Future.successful(state)
+        case _ => pattern.after(interval, system.scheduler) {
+          pollForState(runner, state)
+        }
+      }
   }
 
   "A ProducerGraphRunner" when {
@@ -149,7 +160,7 @@ class ProducerGraphRunnerSpec extends TestKit(ActorSystem("test"))
 
         runner ! "fail"
 
-        waitForRestart()
+        Await.ready(pollForState(runner, Running), 1.second)
 
         runner ! NotifyCommit
         runner ! NotifyCommit
