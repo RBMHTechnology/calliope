@@ -249,7 +249,6 @@ private[calliope] object ProducerGraphRunner {
   case object NotifyCommit
   case object RunGraph
   case object StopGraph
-  case object GetState
 
   case object GraphStarted
   case object GraphStopped
@@ -347,9 +346,6 @@ private[calliope] class ProducerGraphRunner(graph: ProducerGraph) extends Actor
   }
 
   whenUnhandled {
-    case Event(GetState, _) =>
-      stay replying stateName
-
     case Event(_, _) =>
       stay
   }

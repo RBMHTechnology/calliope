@@ -18,8 +18,6 @@ package com.rbmhtechnology.calliope
 
 import akka.actor.SupervisorStrategy.Restart
 import akka.actor.{Actor, ActorRef, ActorSystem, Kill, OneForOneStrategy, Props, SupervisorStrategy}
-import akka.pattern
-import akka.pattern.ask
 import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.stream.{KillSwitches, OverflowStrategy}
 import akka.testkit.{ImplicitSender, TestKit, TestProbe}
@@ -29,7 +27,6 @@ import com.rbmhtechnology.calliope.scaladsl.TransactionalEventProducer.ProducerG
 import org.scalatest.{BeforeAndAfterEach, MustMatchers, WordSpecLike}
 
 import scala.concurrent.duration._
-import scala.concurrent.{Await, Future}
 
 object ProducerGraphRunnerSpec {
 
@@ -86,16 +83,6 @@ class ProducerGraphRunnerSpec extends TestKit(ActorSystem("test"))
     runner ! RunGraph
     expectMsg(GraphStarted)
     runner
-  }
-
-  def pollForState(runner: ActorRef, state: State, interval: FiniteDuration = 100.millis)(implicit timeout: Timeout): Future[State] = {
-    (runner ? GetState).mapTo[State]
-      .flatMap {
-        case `state` => Future.successful(state)
-        case _ => pattern.after(interval, system.scheduler) {
-          pollForState(runner, state)
-        }
-      }
   }
 
   "A ProducerGraphRunner" when {
@@ -160,11 +147,10 @@ class ProducerGraphRunnerSpec extends TestKit(ActorSystem("test"))
 
         runner ! "fail"
 
-        Await.ready(pollForState(runner, Running), 1.second)
+        val cancellable = system.scheduler.schedule(10.millis, 100.millis, runner, NotifyCommit)
 
-        runner ! NotifyCommit
-        runner ! NotifyCommit
-        eventProbe.receiveN(2)
+        eventProbe.receiveN(1)
+        cancellable.cancel()
       }
     }
   }
