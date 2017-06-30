@@ -23,15 +23,7 @@ import scala.concurrent.duration.FiniteDuration
 
 object GapDetectionSpec {
 
-  object GapCollection {
-    def apply(gaps: Long*): GapCollection =
-      new GapCollection(gaps.toVector)
-
-    val empty: GapCollection =
-      new GapCollection(immutable.Seq.empty)
-  }
-
-  case class GapCollection(gaps: immutable.Seq[Long])
+  case class Gaps(sequenceNrs: Int*)
 
   case class Event(sequenceNr: Long)
 
@@ -41,15 +33,20 @@ object GapDetectionSpec {
     }
   }
 
+  val NoGaps = Gaps()
+
   def sleep(duration: FiniteDuration): Unit = {
     Thread.sleep(duration.toMillis)
   }
 
-  def gaps(elements: Long*): GapCollection =
-    GapCollection(elements: _*)
+  def eventSource(sequenceNrs: immutable.Seq[Int])(implicit gaps: Gaps): immutable.Seq[Event] =
+    sequenceNrs.filterNot(gaps.sequenceNrs.contains).map(Event(_))
 
-  def events(sequenceNrs: immutable.Seq[Int])(implicit gapCollection: GapCollection = GapCollection.empty): immutable.Seq[Event] =
-    sequenceNrs.filterNot(gapCollection.gaps.contains).map(Event(_))
+  def events(sequenceNrs: immutable.Seq[Int]): immutable.Seq[Event] =
+    sequenceNrs.map(Event(_))
+
+  def event(sequenceNr: Int): immutable.Seq[Event] =
+    events(immutable.Seq(sequenceNr))
 }
 
 class BatchGapDetectionSpec extends WordSpecLike with MustMatchers with BeforeAndAfterEach {
@@ -81,141 +78,143 @@ class BatchGapDetectionSpec extends WordSpecLike with MustMatchers with BeforeAn
 
   "A batch gap-detection" must {
     "select all events if no gaps exist" in {
-      implicit val gaps = GapCollection.empty
+      implicit val gaps = NoGaps
 
-      filterGapLess(1, events(1 to 5)) mustBe events(1 to 5)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 5)) mustBe events(1 to 5)
     }
     "select events up to a given gap" in {
-      implicit val g = gaps(4)
+      implicit val gaps = Gaps(4)
 
-      filterGapLess(1, events(1 to 5)) mustBe events(1 to 3)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 5)) mustBe events(1 to 3)
     }
     "select events up to the first gap given consecutive gaps" in {
-      implicit val g = gaps(3, 4)
+      implicit val gaps = Gaps(3, 4)
 
-      filterGapLess(1, events(1 to 5)) mustBe events(1 to 2)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 5)) mustBe events(1 to 2)
     }
     "select no events if a gap at the beginning is detected" in {
-      implicit val g = gaps(1)
+      implicit val gaps = Gaps(1)
 
-      filterGapLess(1, events(1 to 5)) mustBe empty
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 5)) mustBe empty
     }
     "persist a gap after the persistence timeout" in {
-      implicit val g = gaps(6)
+      implicit val gaps = Gaps(6)
 
-      filterGapLess(1, events(1 to 10)) mustBe events(1 to 5)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 10)) mustBe events(1 to 5)
 
       waitForPersistTimeout()
 
-      filterGapLess(1, events(1 to 10)) mustBe events(1 to 10)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 10)) mustBe events(1 to 5) ++ events(7 to 10)
     }
     "persist a gap only if already detected" in {
-      implicit val g = gaps(6)
+      implicit val gaps = Gaps(6)
 
       waitForPersistTimeout()
 
-      filterGapLess(1, events(1 to 10)) mustBe events(1 to 5)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 10)) mustBe events(1 to 5)
     }
     "persist consecutive gaps after the persistence timeout" in {
-      implicit val g = gaps(6, 7, 8)
+      implicit val gaps = Gaps(6, 7, 8)
 
-      filterGapLess(1, events(1 to 10)) mustBe events(1 to 5)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 10)) mustBe events(1 to 5)
 
       waitForPersistTimeout()
 
-      filterGapLess(1, events(1 to 10)) mustBe events(1 to 10)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 10)) mustBe events(1 to 5) ++ events(9 to 10)
     }
     "select a missing event if it appears within the persistence timeout" in {
-      filterGapLess(1, events(1 to 5)(gaps(3))) mustBe events(1 to 2)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 5)(Gaps(3))) mustBe events(1 to 2)
 
-      filterGapLess(3, events(3 to 5)) mustBe events(3 to 5)
+      filterGapLess(fromSeqNr = 3, eventSource(3 to 5)(NoGaps)) mustBe events(3 to 5)
     }
     "select a missing event within a consecutive gap if it appears within the persistence timeout" in {
-      filterGapLess(1, events(1 to 5)(gaps(3, 4))) mustBe events(1 to 2)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 5)(Gaps(3, 4))) mustBe events(1 to 2)
 
-      filterGapLess(3, events(3 to 5)(gaps(4))) mustBe events(3 to 3)
+      filterGapLess(fromSeqNr = 3, eventSource(3 to 5)(Gaps(4))) mustBe event(3)
 
       waitForPersistTimeout()
 
-      filterGapLess(4, events(4 to 5)(gaps(4))) mustBe events(5 to 5)
+      filterGapLess(fromSeqNr = 4, eventSource(4 to 5)(Gaps(4))) mustBe event(5)
     }
     "select a missing event if it appears after the persistence timeout" in {
-      filterGapLess(1, events(1 to 5)(gaps(3))) mustBe events(1 to 2)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 5)(Gaps(3))) mustBe events(1 to 2)
 
       waitForPersistTimeout()
 
-      filterGapLess(3, events(3 to 5)) mustBe events(3 to 5)
+      filterGapLess(fromSeqNr = 3, eventSource(3 to 5)(NoGaps)) mustBe events(3 to 5)
     }
     "select all events after at once after all gaps were persisted in a previous invocation" in {
-      implicit val g = gaps(4, 8)
+      implicit val gaps = Gaps(4, 8)
 
-      filterGapLess(1, events(1 to 5)) mustBe events(1 to 3)
-
-      waitForPersistTimeout()
-
-      filterGapLess(4, events(4 to 9)) mustBe events(5 to 7)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 5)) mustBe events(1 to 3)
 
       waitForPersistTimeout()
 
-      filterGapLess(1, events(1 to 10)) mustBe events(1 to 10)
+      filterGapLess(fromSeqNr = 4, eventSource(4 to 9)) mustBe events(5 to 7)
+
+      waitForPersistTimeout()
+
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 10)) mustBe events(1 to 3) ++ events(5 to 7) ++ events(9 to 10)
     }
     "select events up to a persisted gap even if gaps exist" in {
-      implicit val g = gaps(4, 8)
+      implicit val gaps = Gaps(4, 8)
 
-      filterGapLess(1, events(1 to 5)) mustBe events(1 to 3)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 5)) mustBe events(1 to 3)
 
       waitForPersistTimeout()
 
-      filterGapLess(4, events(4 to 10)) mustBe events(5 to 7)
-      filterGapLess(1, events(1 to 5)) mustBe events(1 to 5)
+      filterGapLess(fromSeqNr = 4, eventSource(4 to 10)) mustBe events(5 to 7)
+
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 5)) mustBe events(1 to 3) ++ event(5)
     }
     "persist non-consecutive gaps" in {
-      implicit val g = gaps(4, 7)
+      implicit val gaps = Gaps(4, 7)
 
-      filterGapLess(1, events(1 to 10)) mustBe events(1 to 3)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 10)) mustBe events(1 to 3)
 
       waitForPersistTimeout()
 
-      filterGapLess(4, events(4 to 10)) mustBe events(4 to 10)
+      filterGapLess(fromSeqNr = 4, eventSource(4 to 10)) mustBe events(5 to 6) ++ events(8 to 10)
     }
     "persist non-consecutive gaps for multiple selects" in {
-      implicit val g = gaps(3, 5, 8, 9)
+      implicit val gaps = Gaps(3, 5, 8, 9)
 
-      filterGapLess(1, events(1 to 6)) mustBe events(1 to 2)
-      filterGapLess(1, events(1 to 10)) mustBe events(1 to 2)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 6)) mustBe events(1 to 2)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 10)) mustBe events(1 to 2)
 
       waitForPersistTimeout()
 
-      filterGapLess(3, events(3 to 6)) mustBe events(3 to 6)
-      filterGapLess(3, events(3 to 10)) mustBe events(3 to 10)
+      filterGapLess(fromSeqNr = 3, eventSource(3 to 6)) mustBe event(4) ++ event(6)
+      filterGapLess(fromSeqNr = 3, eventSource(3 to 10)) mustBe event(4) ++ events(6 to 7) ++ event(10)
     }
     "persist highest known gap" in {
-      implicit val g = gaps(4, 8)
+      implicit val gaps = Gaps(4, 8)
 
-      filterGapLess(1, events(1 to 10)) mustBe events(1 to 3)
-      filterGapLess(1, events(1 to 5)) mustBe events(1 to 3)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 10)) mustBe events(1 to 3)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 5)) mustBe events(1 to 3)
 
       waitForPersistTimeout()
 
-      filterGapLess(1, events(1 to 10)) mustBe events(1 to 10)
-      filterGapLess(1, events(1 to 5)) mustBe events(1 to 5)
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 10)) mustBe events(1 to 3) ++ events(5 to 7) ++ events(9 to 10)
+
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 5)) mustBe events(1 to 3) ++ event(5)
     }
     "persist gaps as soon as the persistence-timeout has been reached even if newer gaps are found" in {
-      implicit val g = gaps(3, 4, 7, 11)
+      implicit val gaps = Gaps(3, 4, 7, 11)
 
-      filterGapLess(1, events(1 to 10)) mustBe events(1 to 2)
-
-      sleep(timeout / 2)
-
-      filterGapLess(3, events(3 to 12)) mustBe empty
+      filterGapLess(fromSeqNr = 1, eventSource(1 to 10)) mustBe events(1 to 2)
 
       sleep(timeout / 2)
 
-      filterGapLess(3, events(3 to 12)) mustBe events(3 to 10)
+      filterGapLess(fromSeqNr = 3, eventSource(3 to 12)) mustBe empty
+
+      sleep(timeout / 2)
+
+      filterGapLess(fromSeqNr = 3, eventSource(3 to 12)) mustBe events(5 to 6) ++ events(8 to 10)
 
       waitForPersistTimeout()
 
-      filterGapLess(11, events(11 to 12)) mustBe events(11 to 12)
+      filterGapLess(fromSeqNr = 11, eventSource(11 to 12)) mustBe event(12)
     }
   }
 }
