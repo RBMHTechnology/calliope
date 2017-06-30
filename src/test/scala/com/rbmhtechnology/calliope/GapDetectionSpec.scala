@@ -146,21 +146,18 @@ class BatchGapDetectionSpec extends WordSpecLike with MustMatchers with BeforeAn
 
       filterGapLess(3, events(3 to 5)) mustBe events(3 to 5)
     }
-    "select all events after a previous after gaps were persisted" in {
+    "select all events after at once after all gaps were persisted in a previous invocation" in {
       implicit val g = gaps(4, 8)
 
       filterGapLess(1, events(1 to 5)) mustBe events(1 to 3)
 
       waitForPersistTimeout()
 
-      filterGapLess(4, events(4 to 9)) mustBe events(4 to 7)
+      filterGapLess(4, events(4 to 9)) mustBe events(5 to 7)
 
       waitForPersistTimeout()
 
-      filterGapLess(8, events(8 to 10)) mustBe events(8 to 10)
-
-      filterGapLess(1, events(1 to 5)) mustBe events(1 to 5)
-      filterGapLess(6, events(6 to 10)) mustBe events(6 to 10)
+      filterGapLess(1, events(1 to 10)) mustBe events(1 to 10)
     }
     "select events up to a persisted gap even if gaps exist" in {
       implicit val g = gaps(4, 8)
@@ -169,7 +166,7 @@ class BatchGapDetectionSpec extends WordSpecLike with MustMatchers with BeforeAn
 
       waitForPersistTimeout()
 
-      filterGapLess(4, events(4 to 10)) mustBe events(4 to 8)
+      filterGapLess(4, events(4 to 10)) mustBe events(5 to 7)
       filterGapLess(1, events(1 to 5)) mustBe events(1 to 5)
     }
     "persist non-consecutive gaps" in {
@@ -212,7 +209,7 @@ class BatchGapDetectionSpec extends WordSpecLike with MustMatchers with BeforeAn
 
       filterGapLess(3, events(3 to 12)) mustBe empty
 
-      sleep(timeout * 3 / 4)
+      sleep(timeout / 2)
 
       filterGapLess(3, events(3 to 12)) mustBe events(3 to 10)
 

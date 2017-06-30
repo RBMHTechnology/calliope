@@ -52,6 +52,12 @@ trait GapDetection {
   * is stored as the current persistent gap.
   * All gaps with a sequence-number smaller than the latest persistent gap are assumed to be missing in the event-sequence and will
   * not stop selection of subsequent events.
+  *
+  * '''Important:'''
+  * [[BatchGapDetection]] and invocations of [[GapDetection.gapLess()]] and the returned [[Function]] are '''not thread-safe'''
+  * and perform side-effects as they mutate internal state.
+  * An instance of [[BatchGapDetection]] should only be used for '''a single event-source''' as sharing the instance between different
+  * event-sources may lead to loss of events.
   */
 trait BatchGapDetection extends GapDetection {
 
