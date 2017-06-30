@@ -20,7 +20,7 @@ import java.time.{Duration => JDuration}
 import java.util.concurrent.CompletableFuture
 import java.util.function.{Consumer, Function => JFunction}
 
-import akka.NotUsed
+import akka.{Done, NotUsed}
 import akka.actor.ActorSystem
 import akka.kafka.{ProducerMessage, ProducerSettings}
 import akka.stream.javadsl.Flow
@@ -126,12 +126,100 @@ class TransactionalEventProducer[A] private(delegate: scaladsl.TransactionalEven
 
   import scala.compat.java8.FutureConverters._
 
-  def run(): EventWriter[A] =
-    new EventWriter[A](delegate.run())
+  /**
+    * Starts producing events from the underlying [[EventStore]] to the configured Kafka endpoint.
+    *
+    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once event production has started.
+    * The future may fail with an [[akka.pattern.AskTimeoutException]] if the producer was not able to respond withing the given timeout.
+    */
+  def run(timeout: JDuration): CompletableFuture[Done] =
+    delegate.run()(timeout.toFiniteDuration).toJava.toCompletableFuture
 
-  def stop(timeout: JDuration): CompletableFuture[Boolean] =
-    delegate.stop(timeout.toFiniteDuration).toJava.toCompletableFuture
+  /**
+    * Starts producing events from the underlying [[EventStore]] to the configured Kafka endpoint.
+    *
+    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once event production has started.
+    * The future may fail with an [[akka.pattern.AskTimeoutException]] if the producer was not able to respond withing the given timeout.
+    *
+    * <p><b>Uses a default-timeout of 5 seconds</b><p>
+    */
+  def run(): CompletableFuture[Done] =
+    delegate.run().toJava.toCompletableFuture
 
-  def stop(): CompletableFuture[Boolean] =
+  /**
+    * Stops producing events from the underlying [[EventStore]].
+    *
+    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once event production has stopped.
+    * The future may fail with an [[akka.pattern.AskTimeoutException]] if the producer was not able to respond withing the given timeout.
+    *
+    * The TransactionalEventProducer may be started afterwards by invoking `start()` to continue event production.
+    *
+    * <p>
+    * <b>IMPORTANT:</b>
+    * This method will stop event-production without removing already produced events from the underlying store. Duplicates may be produced
+    * by a subsequent call to `run()` as a consequence.
+    * </p>
+    */
+  def stop(timeout: JDuration): CompletableFuture[Done] =
+    delegate.stop()(timeout.toFiniteDuration).toJava.toCompletableFuture
+
+  /**
+    * Stops producing events from the underlying [[EventStore]].
+    *
+    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once event production has stopped.
+    * The future may fail with an [[akka.pattern.AskTimeoutException]] if the producer was not able to respond withing the given timeout.
+    *
+    * The TransactionalEventProducer may be started afterwards by invoking `start()` to continue event production.
+    *
+    * <p><b>Uses a default-timeout of 5 seconds</b></p>
+    *
+    * <p>
+    * <b>IMPORTANT:</b>
+    * This method will stop event-production without removing already produced events from the underlying store. Duplicates may be produced
+    * by a subsequent call to `run()` as a consequence.
+    * </p>
+    */
+  def stop(): CompletableFuture[Done] =
     delegate.stop().toJava.toCompletableFuture
+
+  /**
+    * Terminates the TransactionalEventProducer. No event production can be performed after invoking this method.
+    * Should be used for cleanup purposes.
+    *
+    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once the component has been terminated.
+    * The future may fail with an [[akka.pattern.AskTimeoutException]] if the producer was not able to respond withing the given timeout.
+    *
+    * <p>
+    * <b>IMPORTANT:</b>
+    * This method will stop event-production without removing already produced events from the underlying store. Duplicates may be produced
+    * by a subsequent incarnation of the [[TransactionalEventProducer]] as a consequence.
+    * </p>
+    */
+  def terminate(timeout: JDuration): CompletableFuture[Done] =
+    delegate.terminate()(timeout.toFiniteDuration).toJava.toCompletableFuture
+
+  /**
+    * Terminates the TransactionalEventProducer. No event production can be performed after invoking this method.
+    * Should be used for cleanup purposes.
+    *
+    * This is an asynchronous operation which returns a [[CompletableFuture]] that is resolved once the component has been terminated.
+    * The future may fail with an [[akka.pattern.AskTimeoutException]] if the producer was not able to respond withing the given timeout.
+    *
+    * <p><b>Uses a default-timeout of 5 seconds</b></p>
+    *
+    * <p>
+    * <b>IMPORTANT:</b>
+    * This method will stop event-production without removing already produced events from the underlying store. Duplicates may be produced
+    * by a subsequent incarnation of the [[TransactionalEventProducer]] as a consequence.
+    * </p>
+    */
+  def terminate(): CompletableFuture[Done] =
+    delegate.terminate().toJava.toCompletableFuture
+
+  /**
+    * Creates an [[EventWriter]] which is used to store events to the underlying [[EventStore]] and consecutively produce them to the configured
+    * Kafka endpoint.
+    */
+  def eventWriter(): EventWriter[A] =
+    new EventWriter[A](delegate.eventWriter())
 }

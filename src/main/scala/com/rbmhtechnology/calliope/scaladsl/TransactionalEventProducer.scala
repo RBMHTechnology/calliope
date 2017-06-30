@@ -16,21 +16,23 @@
 
 package com.rbmhtechnology.calliope.scaladsl
 
-import akka.{Done, NotUsed}
 import akka.actor.SupervisorStrategy.{Escalate, Stop}
-import akka.actor.{Actor, ActorLogging, ActorSystem, OneForOneStrategy, Props, Stash, SupervisorStrategy}
+import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, FSM, OneForOneStrategy, Props, Stash, SupervisorStrategy}
 import akka.event.{Logging, LoggingAdapter}
-import akka.kafka.{ProducerMessage, ProducerSettings}
 import akka.kafka.scaladsl.Producer
-import akka.pattern.gracefulStop
+import akka.kafka.{ProducerMessage, ProducerSettings}
+import akka.pattern.{gracefulStop, _}
 import akka.stream.scaladsl.{Flow, Keep, RunnableGraph, SourceQueueWithComplete}
-import akka.stream.{ActorMaterializer, Attributes}
+import akka.stream.{ActorMaterializer, Attributes, KillSwitches, UniqueKillSwitch}
+import akka.util.Timeout
+import akka.{Done, NotUsed}
 import com.rbmhtechnology.calliope._
-import com.rbmhtechnology.calliope.scaladsl.TransactionalEventProducer.{FailureHandler, ProducerGraph, Settings, UnexpectedStreamCompletionException}
+import com.rbmhtechnology.calliope.scaladsl.TransactionalEventProducer.{FailureHandler, ProducerGraph, Settings}
 import com.rbmhtechnology.calliope.serializer.kafka.PayloadFormatSerializer
 import com.typesafe.config.Config
 import org.apache.kafka.common.serialization.StringSerializer
 
+import scala.collection.immutable
 import scala.concurrent.Future
 import scala.concurrent.duration.{FiniteDuration, _}
 import scala.util.{Failure, Success}
@@ -41,7 +43,7 @@ object TransactionalEventProducer {
 
   class StreamFailedException(message: String) extends RuntimeException(message: String)
 
-  type ProducerGraph = RunnableGraph[(SourceQueueWithComplete[Unit], Future[Done])]
+  type ProducerGraph = RunnableGraph[((SourceQueueWithComplete[Unit], UniqueKillSwitch), Future[Done])]
   type FailureHandler = (Throwable) => Unit
   type ProducerFlow[A] = Flow[ProducerMessage.Message[String, SequencedEvent[A], Unit], ProducerMessage.Result[String, SequencedEvent[A], Unit], NotUsed]
   type ProducerProvider[A] = ProducerSettings[String, SequencedEvent[A]] => ProducerFlow[A]
@@ -147,35 +149,77 @@ class TransactionalEventProducer[A] private(sourceId: String, topic: String, eve
                                            (implicit val system: ActorSystem) extends IoDispatcher {
 
   import ProducerGraphRunner._
+  import system.dispatcher
 
   private implicit val loggingAdapter = Logging(system, getClass)
 
-  private var running = false
-
   private val graph = ProducerGraph(
-    EventStoreReader.withTimestampGapDetection(sourceId, eventStore, settings.transactionTimeout),
-    new EventStoreDeleter(eventStore),
+    EventStoreReader.withTimestampGapDetection(sourceId, eventStore, settings.transactionTimeout)(system, ioDispatcher),
+    new EventStoreDeleter(eventStore)(ioDispatcher),
     settings)
 
-  private lazy val graphRunner = system.actorOf(Props(new GraphRunnerSupervisor(graph, onFailure)))
+  private val graphRunner = system.actorOf(Props(new GraphRunnerSupervisor(graph, onFailure)))
 
-  def run(): EventWriter[A] = {
-    running = true
-    val runner = graphRunner
-    new EventStoreWriter[A](topic, eventStore, runner ! NotifyCommit)
+  /**
+    * Creates an [[EventWriter]] which is used to store events to the underlying [[EventStore]] and consecutively produce them to the configured
+    * Kafka endpoint.
+    */
+  def eventWriter(): EventWriter[A] =
+    new EventStoreWriter[A](topic, eventStore, graphRunner ! NotifyCommit)
+
+  /**
+    * Starts producing events from the underlying [[EventStore]] to the configured Kafka endpoint.
+    *
+    * This is an asynchronous operation which returns a [[Future]] that is resolved once event production has started.
+    * The future may fail with an [[AskTimeoutException]] if the producer was not able to respond withing the given timeout.
+    */
+  def run()(implicit timeout: FiniteDuration = 5.seconds): Future[Done] =
+    askGraphRunnerTo(RunGraph)
+
+  /**
+    * Stops producing events from the underlying [[EventStore]].
+    *
+    * This is an asynchronous operation which returns a [[Future]] that is resolved once event production has stopped.
+    * The future may fail with an [[AskTimeoutException]] if the producer was not able to respond withing the given timeout.
+    *
+    * The TransactionalEventProducer may be started afterwards by invoking `start()` to continue event production.
+    *
+    * <p>
+    * <b>IMPORTANT:</b>
+    * This method will stop event-production without removing already produced events from the underlying store. Duplicates may be produced
+    * by a subsequent call to `run()` as a consequence.
+    * </p>
+    */
+  def stop()(implicit timeout: FiniteDuration = 5.seconds): Future[Done] =
+    askGraphRunnerTo(StopGraph)
+
+  /**
+    * Terminates the TransactionalEventProducer. No event production can be performed after invoking this method.
+    * Should be used for cleanup purposes.
+    *
+    * This is an asynchronous operation which returns a [[Future]] that is resolved once the component has been terminated.
+    * The future may fail with an [[AskTimeoutException]] if the producer was not able to respond withing the given timeout.
+    *
+    * <p>
+    * <b>IMPORTANT:</b>
+    * This method will stop event-production without removing already produced events from the underlying store. Duplicates may be produced
+    * by a subsequent incarnation of the [[TransactionalEventProducer]] as a consequence.
+    * </p>
+    */
+  def terminate()(implicit timeout: FiniteDuration = 5.seconds): Future[Done] = {
+    val deadline = Deadline.now + timeout
+    stop().flatMap(_ => gracefulStop(graphRunner, deadline.timeLeft)).map(_ => Done)
   }
 
-  def stop(timeout: FiniteDuration = 5.seconds): Future[Boolean] = {
-    if (running)
-      gracefulStop(graphRunner, timeout)
-    else
-      Future.successful(true)
+  private def askGraphRunnerTo(msg: Any)(implicit timeout: FiniteDuration): Future[Done] = {
+    ask(graphRunner, msg)(Timeout(timeout)).map(_ => Done)
   }
 }
 
 private object ProducerGraph {
   def apply[A](eventReader: EventReader[A], eventDeleter: EventDeleter, settings: Settings[A])(implicit logging: LoggingAdapter): ProducerGraph =
     EventSource(eventReader, settings.readBufferSize, settings.readInterval)
+      .viaMat(KillSwitches.single)(Keep.both)
       .viaMat(ProducerFlow[EventRecord[A]].toMessage)(Keep.left)
       .viaMat(settings.producerFlow())(Keep.left)
       .log("produced", identity).withAttributes(Attributes.logLevels(onFailure = Logging.DebugLevel))
@@ -188,9 +232,9 @@ private class GraphRunnerSupervisor(graph: ProducerGraph, onFailure: FailureHand
 
   override def supervisorStrategy: SupervisorStrategy = OneForOneStrategy()(SupervisorStrategy.defaultDecider.foreach {
     case (err, Stop) =>
-      onFailure.apply(err)
+      onFailure(err)
     case (err, Escalate) =>
-      onFailure.apply(err)
+      onFailure(err)
   })
 
   private val graphRunner = context.actorOf(ProducerGraphRunner.props(graph))
@@ -200,71 +244,123 @@ private class GraphRunnerSupervisor(graph: ProducerGraph, onFailure: FailureHand
   }
 }
 
-private object ProducerGraphRunner {
+private[calliope] object ProducerGraphRunner {
 
   case object NotifyCommit
+  case object RunGraph
+  case object StopGraph
 
-  private[ProducerGraphRunner] case object StartGraph
-  private[ProducerGraphRunner] case class RestartGraph(failure: Throwable)
+  case object GraphStarted
+  case object GraphStopped
+
+  case class RestartGraph(failure: Throwable)
+
+  case class GraphAbortedException() extends RuntimeException
+
+  sealed trait State
+  case object Stopped extends State
+  case object Stopping extends State
+  case object Running extends State
+
+  case class Data(commitQueue: Option[SourceQueueWithComplete[Unit]] = None,
+                  killSwitch: Option[UniqueKillSwitch] = None,
+                  notifyOnStop: Option[ActorRef] = None) {
+    def withQueue(queue: SourceQueueWithComplete[Unit]): Data =
+      copy(commitQueue = Some(queue))
+
+    def withKillSwitch(killSwitch: UniqueKillSwitch): Data =
+      copy(killSwitch = Some(killSwitch))
+
+    def withNotificationFor(target: ActorRef): Data =
+      copy(notifyOnStop = Some(target))
+
+    def withoutNotification(): Data =
+      copy(notifyOnStop = None)
+  }
 
   def props(graph: ProducerGraph): Props =
     Props(new ProducerGraphRunner(graph))
 }
 
-private class ProducerGraphRunner(graph: ProducerGraph) extends Actor with ActorLogging with Stash {
+private[calliope] class ProducerGraphRunner(graph: ProducerGraph) extends Actor
+  with ActorLogging with Stash with FSM[ProducerGraphRunner.State, ProducerGraphRunner.Data] {
 
   import ProducerGraphRunner._
   import context.dispatcher
 
   implicit val materializer = ActorMaterializer()
 
-  private def runGraph(): SourceQueueWithComplete[Unit] = {
-    val (queue, ft) = graph.run()
+  private def runGraph(): (SourceQueueWithComplete[Unit], UniqueKillSwitch) = {
+    val (graphControl, ft) = graph.run()
 
-    ft onComplete { result =>
-      val cause = result match {
-        case Failure(err) => err
-        case Success(_) => new UnexpectedStreamCompletionException("Transactional producer stream stopped unexpectedly")
-      }
-      self ! RestartGraph(cause)
+    ft recover {
+      case _: GraphAbortedException => Done
+    } onComplete {
+      case Failure(err) => self ! RestartGraph(err)
+      case Success(_) => self ! GraphStopped
     }
-    queue
+    graphControl
   }
 
-  private var commitQueue: SourceQueueWithComplete[Unit] = _
+  startWith(Stopped, Data())
 
-  override def preStart(): Unit = {
-    self ! StartGraph
+  when(Stopped) {
+    case Event(RunGraph, data) =>
+      log.info("Starting transactional producer stream.")
+      val (queue, ks) = runGraph()
+      goto(Running) using data.withQueue(queue).withKillSwitch(ks) replying GraphStarted
+
+    case Event(StopGraph, _) =>
+      stay replying GraphStopped
+  }
+
+  when(Running) {
+    case Event(RunGraph, _) =>
+      stay replying GraphStarted
+
+    case Event(StopGraph, data) =>
+      log.info("Shutting down transactional producer stream.")
+      data.killSwitch.foreach(_.abort(GraphAbortedException()))
+      goto(Stopping) using data.withNotificationFor(sender())
+
+    case Event(RestartGraph(failure), data) =>
+      log.warning("Transactional producer stream was shutdown with cause: {}. Producer will be restarted", failure)
+      val (queue, ks) = runGraph()
+      stay using data.withQueue(queue).withKillSwitch(ks)
+
+    case Event(NotifyCommit, data) =>
+      data.commitQueue.foreach(_.offer(Unit))
+      stay
+  }
+
+  when(Stopping) {
+    case Event(RunGraph | StopGraph, _) =>
+      stash()
+      stay
+
+    case Event(GraphStopped, data) =>
+      log.info("Transactional producer stream stopped.")
+      data.notifyOnStop.foreach(_ ! GraphStopped)
+      unstashAll()
+      goto(Stopped) using data.withoutNotification()
+  }
+
+  whenUnhandled {
+    case Event(_, _) =>
+      stay
+  }
+
+  initialize()
+
+  override def preRestart(reason: Throwable, message: Option[Any]): Unit = {
+    if (stateName == Running) {
+      self ! RunGraph
+    }
+    super.preRestart(reason, message)
   }
 
   override def postStop(): Unit = {
     materializer.shutdown()
     super.postStop()
   }
-
-  private def initializing: Receive = {
-    case StartGraph =>
-      log.info("Starting transactional producer.")
-      commitQueue = runGraph()
-      unstashAll()
-      context.become(initialized)
-
-    case RestartGraph(_) =>
-      log.info("Restart of transactional producer requested while initialization in progress. Restart request is ignored.")
-
-    case NotifyCommit =>
-      stash()
-  }
-
-  private def initialized: Receive = {
-    case NotifyCommit =>
-      commitQueue.offer(Unit)
-
-    case RestartGraph(failure) =>
-      log.warning("Transactional producer was shutdown with cause: {}. Producer will be restarted", failure)
-      commitQueue = runGraph()
-  }
-
-  override def receive: Receive =
-    initializing
 }
