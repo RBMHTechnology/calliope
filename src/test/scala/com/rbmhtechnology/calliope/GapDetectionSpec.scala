@@ -212,7 +212,7 @@ class BatchGapDetectionSpec extends WordSpecLike with MustMatchers with BeforeAn
 
       filterGapLess(fromSeqNr = 3, eventSource(3 to 12)) mustBe events(5 to 6) ++ events(8 to 10)
 
-      waitForPersistTimeout()
+      sleep(timeout / 2)
 
       filterGapLess(fromSeqNr = 11, eventSource(11 to 12)) mustBe event(12)
     }
