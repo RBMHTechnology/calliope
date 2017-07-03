@@ -19,10 +19,10 @@ package com.rbmhtechnology.calliope
 import akka.actor.ActorSystem
 import akka.dispatch.MessageDispatcher
 
-trait IoDispatcher {
+trait Dispatchers {
 
   def system: ActorSystem
 
-  lazy val ioDispatcher: MessageDispatcher =
-    system.dispatchers.lookup("calliope.dispatchers.io-dispatcher")
+  def pinnedDispatcher(): MessageDispatcher =
+    system.dispatchers.lookup("calliope.dispatchers.pinned-dispatcher")
 }

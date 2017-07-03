@@ -146,7 +146,7 @@ object TransactionalEventProducer {
 }
 
 class TransactionalEventProducer[A] private(sourceId: String, topic: String, eventStore: EventStore, onFailure: FailureHandler, settings: Settings[A])
-                                           (implicit val system: ActorSystem) extends IoDispatcher {
+                                           (implicit val system: ActorSystem) extends Dispatchers {
 
   import ProducerGraphRunner._
   import system.dispatcher
@@ -154,8 +154,8 @@ class TransactionalEventProducer[A] private(sourceId: String, topic: String, eve
   private implicit val loggingAdapter = Logging(system, getClass)
 
   private val graph = ProducerGraph(
-    EventStoreReader.withTimestampGapDetection(sourceId, eventStore, settings.transactionTimeout)(system, ioDispatcher),
-    new EventStoreDeleter(eventStore)(ioDispatcher),
+    EventStoreReader.withBatchGapDetection(sourceId, eventStore, settings.transactionTimeout)(system, pinnedDispatcher()),
+    new EventStoreDeleter(eventStore)(pinnedDispatcher()),
     settings)
 
   private val graphRunner = system.actorOf(Props(new GraphRunnerSupervisor(graph, onFailure)))

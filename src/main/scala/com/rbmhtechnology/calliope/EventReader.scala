@@ -38,6 +38,6 @@ trait GapDetectionEventReader[A] extends EventReader[A] with GapDetection {
 }
 
 /**
-  * Mixin for applying a gap-detection based on [[TimestampGapDetection]] to an [[EventReader]].
+  * Mixin for applying a gap-detection based on [[BatchGapDetection]] to an [[EventReader]].
   */
-trait ReaderTimestampGapDetection[A] extends GapDetectionEventReader[A] with TimestampGapDetection
+trait ReaderBatchGapDetection[A] extends GapDetectionEventReader[A] with BatchGapDetection
