@@ -24,7 +24,6 @@ import akka.kafka.Subscriptions
 import akka.kafka.scaladsl.Consumer
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Sink
-import org.apache.kafka.clients.consumer.ConsumerRecord
 
 import scala.collection.immutable
 
@@ -52,7 +51,7 @@ class DeduplicationApiSpecification {
     val store = new SequenceStore(new TestStorageAdapter())
 
     val control = Consumer.plainPartitionedSource[String, Event](null, Subscriptions.topics("topic"))
-      .via(Deduplication.flow[String, Event, ConsumerRecord[String, Event]](maxPartitions, store.loadSequences))
+      .via(Deduplication.flow(maxPartitions, store.loadSequences))
       .map { x =>
         // business logic
         store.persist(x)

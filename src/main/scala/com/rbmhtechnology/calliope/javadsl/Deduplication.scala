@@ -74,24 +74,19 @@ object Deduplication {
 
 class SequenceStore(delegate: scaladsl.SequenceStore) {
 
-  def valued[M, V](f: JFunction[M, V]): Valued[M, V] =
-    new Valued[M, V] {
-      override def value(m: M): V = f.apply(m)
-    }
-
-  def partitioned[M](f: JFunction[M, TopicPartition]): Partitioned[M] =
+  private def partitioned[M](f: JFunction[M, TopicPartition]): Partitioned[M] =
     new Partitioned[M] {
       override def partition(event: M): Int = f.apply(event).partition()
 
       override def topic(event: M): String = f.apply(event).topic()
     }
 
-  def sourced[A](f: JFunction[A, String]): Sourced[A] =
+  private def sourced[A](f: JFunction[A, String]): Sourced[A] =
     new Sourced[A] {
       override def sourceId(a: A): String = f.apply(a)
     }
 
-  def sequenced[A](f: JFunction[A, Long]): Sequenced[A] =
+  private def sequenced[A](f: JFunction[A, Long]): Sequenced[A] =
     new Sequenced[A] {
       override def sequenceNr(event: A): Long = f.apply(event)
     }
@@ -99,12 +94,12 @@ class SequenceStore(delegate: scaladsl.SequenceStore) {
   def loadSequences(tp: TopicPartition): CompletableFuture[JCollection[SourceSequenceNr]] =
     delegate.loadSequences(tp).map(_.asJavaCollection).toJava.toCompletableFuture
 
-  def persist[K, V, M](m: M,
-                       valueF: JFunction[M, V],
-                       partitionF: JFunction[M, TopicPartition],
-                       sourceF: JFunction[V, String],
-                       sequenceF: JFunction[V, Long]): CompletableFuture[Done] =
-    delegate.persist(m)(valued(valueF), partitioned(partitionF), sourced(sourceF), sequenced(sequenceF)).toJava.toCompletableFuture
+  def persist[V, M](m: M,
+                    valueF: JFunction[M, V],
+                    partitionF: JFunction[M, TopicPartition],
+                    sourceF: JFunction[V, String],
+                    sequenceF: JFunction[V, Long]): CompletableFuture[Done] =
+    delegate.persist(m)(partitioned(partitionF), sourced(valueF.andThen(sourceF)), sequenced(valueF.andThen(sequenceF))).toJava.toCompletableFuture
 
   def persistConsumerRecord[K, V](m: ConsumerRecord[K, V],
                                   sourceF: JFunction[V, String],
@@ -136,10 +131,10 @@ class BoundSequenceStore[V](delegate: SequenceStore,
   def loadSequences(tp: TopicPartition): CompletableFuture[JCollection[SourceSequenceNr]] =
     delegate.loadSequences(tp)
 
-  def persist[K, M](m: M,
-                    valueF: JFunction[M, V],
-                    partitionF: JFunction[M, TopicPartition]): CompletableFuture[Done] =
-    delegate.persist[K, V, M](m, valueF, partitionF, sourceF, sequenceF)
+  def persist[M](m: M,
+                 valueF: JFunction[M, V],
+                 partitionF: JFunction[M, TopicPartition]): CompletableFuture[Done] =
+    delegate.persist[V, M](m, valueF, partitionF, sourceF, sequenceF)
 
   def persistConsumerRecord[K](m: ConsumerRecord[K, V]): CompletableFuture[Done] =
     delegate.persistConsumerRecord[K, V](m, sourceF, sequenceF)
@@ -184,6 +179,7 @@ object StorageAdapter {
         delegate.update(sql)
     }
   }
+
 }
 
 

@@ -16,9 +16,23 @@
 
 package com.rbmhtechnology.calliope
 
+import akka.kafka.ConsumerMessage.CommittableMessage
+import org.apache.kafka.clients.consumer.ConsumerRecord
+
 /**
   * Type class for elements that contain sequence numbers.
   */
 trait Sequenced[A] {
   def sequenceNr(event: A): Long
+}
+
+object Sequenced {
+
+  implicit def sequencedConsumerRecord[K, V](implicit sequenced: Sequenced[V]): Sequenced[ConsumerRecord[K, V]] = new Sequenced[ConsumerRecord[K, V]] {
+    override def sequenceNr(a: ConsumerRecord[K, V]): Long = sequenced.sequenceNr(a.value())
+  }
+
+  implicit def sequencedCommittableMessage[K, V](implicit sequenced: Sequenced[V]): Sequenced[CommittableMessage[K, V]] = new Sequenced[CommittableMessage[K, V]] {
+    override def sequenceNr(a: CommittableMessage[K, V]): Long = sequenced.sequenceNr(a.record.value())
+  }
 }

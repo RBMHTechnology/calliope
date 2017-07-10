@@ -33,8 +33,20 @@ trait Sourced[A] {
   def sourceId(a: A): String
 }
 
+object Sourced {
+
+  implicit def sourcedConsumerRecord[K, V](implicit sourced: Sourced[V]): Sourced[ConsumerRecord[K, V]] = new Sourced[ConsumerRecord[K, V]] {
+    override def sourceId(a: ConsumerRecord[K, V]): String = sourced.sourceId(a.value())
+  }
+
+  implicit def sourcedCommittableMessage[K, V](implicit sourced: Sourced[V]): Sourced[CommittableMessage[K, V]] = new Sourced[CommittableMessage[K, V]] {
+    override def sourceId(a: CommittableMessage[K, V]): String = sourced.sourceId(a.record.value())
+  }
+}
+
 trait Partitioned[A] {
   def topic(event: A): String
+
   def partition(event: A): Int
 }
 
@@ -53,20 +65,6 @@ object Partitioned {
   }
 }
 
-trait Valued[A, V] {
-  def value(a: A): V
-}
-
-object Valued {
-  implicit def consumerRecordMessage[K, V]: Valued[ConsumerRecord[K, V], V] = new Valued[ConsumerRecord[K, V], V] {
-    override def value(a: ConsumerRecord[K, V]): V = a.value()
-  }
-
-  implicit def committableMessageMessage[K, V]: Valued[CommittableMessage[K, V], V] = new Valued[CommittableMessage[K, V], V] {
-    override def value(a: CommittableMessage[K, V]): V = a.record.value()
-  }
-}
-
 object Deduplication {
 
   type SourceSequences = immutable.Seq[SourceSequenceNr]
@@ -75,21 +73,20 @@ object Deduplication {
   import scala.concurrent.ExecutionContext.Implicits.global
 
   def plain[K, V](maxPartitions: Int, f: TopicPartition => Future[SourceSequences])(implicit src: Sourced[V], seq: Sequenced[V]): Flow[(TopicPartition, Source[ConsumerRecord[K, V], NotUsed]), ConsumerRecord[K, V], NotUsed] =
-    flow[K, V, ConsumerRecord[K, V]](maxPartitions, f)
+    flow[ConsumerRecord[K, V]](maxPartitions, f)
 
   def committable[K, V](maxPartitions: Int, f: TopicPartition => Future[SourceSequences])(implicit src: Sourced[V], seq: Sequenced[V]): Flow[(TopicPartition, Source[CommittableMessage[K, V], NotUsed]), CommittableMessage[K, V], NotUsed] =
-    flow[K, V, CommittableMessage[K, V]](maxPartitions, f)
+    flow[CommittableMessage[K, V]](maxPartitions, f)
 
-  def flow[K, V, M](maxPartitions: Int, f: TopicPartition => Future[SourceSequences])(implicit valued: Valued[M, V], src: Sourced[V], seq: Sequenced[V]): Flow[(TopicPartition, Source[M, NotUsed]), M, NotUsed] =
+  def flow[M](maxPartitions: Int, f: TopicPartition => Future[SourceSequences])(implicit src: Sourced[M], seq: Sequenced[M]): Flow[(TopicPartition, Source[M, NotUsed]), M, NotUsed] =
     Flow[(TopicPartition, Source[M, NotUsed])]
       .mapAsync(1) { case (tp, source) =>
         f(tp).map(s => (tp, source, s.map(x => x.sourceId -> x.sequenceNr).toMap))
       }
       .flatMapMerge(maxPartitions, x => {
         x._2.scan[(SourceSequenceRegistry, Option[M])]((x._3, None)) { case ((s, _), m) =>
-          val v = valued.value(m)
-          val sourceId = src.sourceId(v)
-          val snr = seq.sequenceNr(v)
+          val sourceId = src.sourceId(m)
+          val snr = seq.sequenceNr(m)
 
           if (s.get(sourceId).forall(_ < snr))
             (s + (sourceId -> snr), Some(m))
@@ -109,10 +106,8 @@ class SequenceStore(storageAdapter: StorageAdapter[SourceSequenceNr]) {
   def loadSequences(tp: TopicPartition): Future[immutable.Seq[SourceSequenceNr]] =
     Future.successful(storageAdapter.query("select", rs => SourceSequenceNr(rs.getString("source-id"), rs.getLong("sequence-nr"))))
 
-  def persist[K, V, M](m: M)(implicit mes: Valued[M, V], part: Partitioned[M], src: Sourced[V], seq: Sequenced[V]): Future[Done] = {
-    val v = mes.value(m)
-
-    Future.successful((part.topic(m), part.partition(m), src.sourceId(v), seq.sequenceNr(v)))
+  def persist[M](m: M)(implicit part: Partitioned[M], src: Sourced[M], seq: Sequenced[M]): Future[Done] = {
+    Future.successful((part.topic(m), part.partition(m), src.sourceId(m), seq.sequenceNr(m)))
       .map(v => storageAdapter.update("sql"))
       .map(_ => Done)
   }
