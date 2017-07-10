@@ -16,6 +16,8 @@
 
 package com.rbmhtechnology.calliope
 
+import java.sql.ResultSet
+
 import akka.kafka.ConsumerMessage.CommittableMessage
 import akka.stream.scaladsl.{Flow, Source}
 import akka.{Done, NotUsed}
@@ -100,17 +102,25 @@ object Deduplication {
       })
 }
 
-class SequenceStore {
+class SequenceStore(storageAdapter: StorageAdapter[SourceSequenceNr]) {
 
   import scala.concurrent.ExecutionContext.Implicits.global
 
   def loadSequences(tp: TopicPartition): Future[immutable.Seq[SourceSequenceNr]] =
-    Future.successful(immutable.Seq.empty)
+    Future.successful(storageAdapter.query("select", rs => SourceSequenceNr(rs.getString("source-id"), rs.getLong("sequence-nr"))))
 
   def persist[K, V, M](m: M)(implicit mes: Valued[M, V], part: Partitioned[M], src: Sourced[V], seq: Sequenced[V]): Future[Done] = {
     val v = mes.value(m)
 
     Future.successful((part.topic(m), part.partition(m), src.sourceId(v), seq.sequenceNr(v)))
+      .map(v => storageAdapter.update("sql"))
       .map(_ => Done)
   }
+}
+
+trait StorageAdapter[A] {
+
+  def query(sql: String, mapper: ResultSet => A): immutable.Seq[A]
+
+  def update(sql: String): Int
 }

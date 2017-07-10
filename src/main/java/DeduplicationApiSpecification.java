@@ -19,13 +19,20 @@ import akka.kafka.Subscriptions;
 import akka.kafka.javadsl.Consumer;
 import akka.stream.ActorMaterializer;
 import akka.stream.javadsl.Sink;
+import com.rbmhtechnology.calliope.SourceSequenceNr;
 import com.rbmhtechnology.calliope.javadsl.BoundSequenceStore;
 import com.rbmhtechnology.calliope.javadsl.Deduplication;
 import com.rbmhtechnology.calliope.Event;
 import com.rbmhtechnology.calliope.javadsl.SequenceStore;
 import com.rbmhtechnology.calliope.SequencedEvent;
+import com.rbmhtechnology.calliope.javadsl.StorageAdapter;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
+
+import java.sql.ResultSet;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.function.Function;
 
 public class DeduplicationApiSpecification {
 
@@ -36,9 +43,9 @@ public class DeduplicationApiSpecification {
     final ActorSystem system = ActorSystem.create("spec");
     final ActorMaterializer materializer = ActorMaterializer.create(system);
 
-    final SequenceStore store = SequenceStore.create();
+    final SequenceStore store = SequenceStore.create(new TestStorageAdapter());
     final BoundSequenceStore<Event> eventStore = store.bind(Event::sourceId, Event::sequenceNr);
-    final BoundSequenceStore<SequencedEvent<Event>> seqEventStore = SequenceStore.sequencedEvent();
+    final BoundSequenceStore<SequencedEvent<Event>> seqEventStore = SequenceStore.sequencedEvent(new TestStorageAdapter());
 
     final Consumer.Control control =
       Consumer.<String, Event>plainPartitionedSource(null, Subscriptions.topics("topic"))
@@ -64,5 +71,18 @@ public class DeduplicationApiSpecification {
         })
         .to(Sink.ignore())
         .run(materializer);
+  }
+
+  public static class TestStorageAdapter implements StorageAdapter<SourceSequenceNr> {
+
+    @Override
+    public Collection<SourceSequenceNr> query(final String sql, final Function<ResultSet, SourceSequenceNr> mapper) {
+      return Collections.emptyList();
+    }
+
+    @Override
+    public int update(final String sql) {
+      return 0;
+    }
   }
 }

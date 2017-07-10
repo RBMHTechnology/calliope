@@ -16,6 +16,8 @@
 
 package com.rbmhtechnology.calliope
 
+import java.sql.ResultSet
+
 import akka.actor.ActorSystem
 import akka.kafka.ConsumerMessage.CommittableOffsetBatch
 import akka.kafka.Subscriptions
@@ -23,6 +25,8 @@ import akka.kafka.scaladsl.Consumer
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Sink
 import org.apache.kafka.clients.consumer.ConsumerRecord
+
+import scala.collection.immutable
 
 case class Event(sourceId: String, sequenceNr: Long, payload: String)
 
@@ -45,8 +49,7 @@ class DeduplicationApiSpecification {
 
     val maxPartitions = Int.MaxValue
 
-    val store = new SequenceStore {
-    }
+    val store = new SequenceStore(new TestStorageAdapter())
 
     val control = Consumer.plainPartitionedSource[String, Event](null, Subscriptions.topics("topic"))
       .via(Deduplication.flow[String, Event, ConsumerRecord[String, Event]](maxPartitions, store.loadSequences))
@@ -81,4 +84,10 @@ class DeduplicationApiSpecification {
       .to(Sink.ignore)
       .run()
   }
+
+  class TestStorageAdapter extends StorageAdapter[SourceSequenceNr] {
+    override def query(sql: String, mapper: (ResultSet) => SourceSequenceNr): immutable.Seq[SourceSequenceNr] = ???
+    override def update(sql: String): Int = ???
+  }
 }
+

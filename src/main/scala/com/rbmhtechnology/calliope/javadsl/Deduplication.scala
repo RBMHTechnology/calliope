@@ -16,6 +16,7 @@
 
 package com.rbmhtechnology.calliope.javadsl
 
+import java.sql.ResultSet
 import java.util.concurrent.CompletableFuture
 import java.util.function.{Function => JFunction}
 import java.util.{Collection => JCollection}
@@ -31,6 +32,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.TopicPartition
 
 import scala.collection.JavaConverters._
+import scala.collection.immutable
 import scala.compat.java8.FunctionConverters._
 import scala.compat.java8.FutureConverters._
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -148,11 +150,11 @@ class BoundSequenceStore[V](delegate: SequenceStore,
 
 object SequenceStore {
 
-  def create(): SequenceStore =
-    new SequenceStore(new scaladsl.SequenceStore())
+  def create(storageAdapter: StorageAdapter[SourceSequenceNr]): SequenceStore =
+    new SequenceStore(new scaladsl.SequenceStore(storageAdapter.asScala))
 
-  def sequencedEvent[E]: BoundSequenceStore[SequencedEvent[E]] =
-    new SequenceStore(new scaladsl.SequenceStore())
+  def sequencedEvent[E](storageAdapter: StorageAdapter[SourceSequenceNr]): BoundSequenceStore[SequencedEvent[E]] =
+    new SequenceStore(new scaladsl.SequenceStore(storageAdapter.asScala))
       .bind(
         new JFunction[SequencedEvent[E], String] {
           override def apply(t: SequencedEvent[E]): String = t.sourceId
@@ -162,3 +164,26 @@ object SequenceStore {
         }
       )
 }
+
+trait StorageAdapter[A] {
+
+  def query(sql: String, mapper: JFunction[ResultSet, A]): JCollection[A]
+
+  def update(sql: String): Int
+}
+
+object StorageAdapter {
+
+  implicit class ExtendedStorageAdapter[A](delegate: StorageAdapter[A]) {
+    def asScala: scaladsl.StorageAdapter[A] = new scaladsl.StorageAdapter[A] {
+
+      override def query(sql: String, mapper: (ResultSet) => A): immutable.Seq[A] =
+        delegate.query(sql, asJavaFunction(mapper)).asScala.toVector
+
+      override def update(sql: String): Int =
+        delegate.update(sql)
+    }
+  }
+}
+
+
