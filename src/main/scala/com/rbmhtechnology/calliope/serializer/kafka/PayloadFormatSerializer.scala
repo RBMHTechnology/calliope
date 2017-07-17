@@ -18,16 +18,16 @@ package com.rbmhtechnology.calliope.serializer.kafka
 
 import java.util
 import java.util.function.{Function => JFunction}
-import javaslang.control.{Try => JTry}
 
 import akka.actor.ActorSystem
 import com.rbmhtechnology.calliope.serializer.CommonFormats.PayloadFormat
 import com.rbmhtechnology.calliope.serializer.{DelegatingStringManifestPayloadSerializer, PayloadSerializer}
+import io.vavr.control.{Try => JTry}
 import org.apache.kafka.common.serialization.{Deserializer, Serializer}
 
+import scala.compat.java8.FunctionConverters._
 import scala.util.control.NonFatal
 import scala.util.{Failure, Success, Try}
-import scala.compat.java8.FunctionConverters._
 
 trait NoOpConfiguration {
   def configure(configs: util.Map[String, _], isKey: Boolean): Unit = {}

@@ -34,7 +34,7 @@ lazy val dependencies = Seq(
   "org.apache.kafka"        %  "kafka-clients"            % Version.Kafka,
   "org.apache.kafka"        %  "kafka-streams"            % Version.Kafka,
   "org.scala-lang.modules"  %% "scala-java8-compat"       % "0.8.0",
-  "io.javaslang"            %  "javaslang"                % "2.0.6",
+  "io.vavr"                 %  "vavr"                     % "0.9.0",
 
   "org.scalatest"           %% "scalatest"                % "3.0.1"      % "it,test",
   "com.typesafe.akka"       %% "akka-stream-testkit"      % Version.Akka % "it,test",
