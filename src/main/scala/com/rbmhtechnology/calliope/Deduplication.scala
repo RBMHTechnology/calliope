@@ -83,20 +83,23 @@ object Deduplication {
       .mapAsync(1) { case (tp, source) =>
         f(tp).map(s => (tp, source, s.map(x => x.sourceId -> x.sequenceNr).toMap))
       }
-      .flatMapMerge(maxPartitions, x => {
-        x._2.scan[(SourceSequenceRegistry, Option[M])]((x._3, None)) { case ((s, _), m) =>
-          val sourceId = src.sourceId(m)
-          val snr = seq.sequenceNr(m)
-
-          if (s.get(sourceId).forall(_ < snr))
-            (s + (sourceId -> snr), Some(m))
-          else
-            (s, None)
-        }
-          .collect {
-            case (_, Some(v)) => v
-          }
+      .flatMapMerge(maxPartitions, { case (_, source, registry) =>
+        source.via(filterBySequenceNr(registry))
       })
+
+  private def filterBySequenceNr[M](registry: SourceSequenceRegistry)(implicit src: Sourced[M], seq: Sequenced[M]): Flow[M, M, NotUsed] =
+    Flow[M]
+      .scan[(SourceSequenceRegistry, Option[M])]((registry, None)) { case ((r, _), m) =>
+      val sourceId = src.sourceId(m)
+      val sequenceNr = seq.sequenceNr(m)
+
+      if (r.get(sourceId).forall(_ < sequenceNr))
+        (r + (sourceId -> sequenceNr), Some(m))
+      else
+        (r, None)
+    }.collect {
+      case (_, Some(m)) => m
+    }
 }
 
 class SequenceStore(storageAdapter: StorageAdapter[SourceSequenceNr]) {
