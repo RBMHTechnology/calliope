@@ -10,6 +10,13 @@ lazy val commonSettings = Seq(
   crossScalaVersions := Seq("2.11.11", "2.12.1")
 )
 
+scalacOptions in (Compile, doc) ++= {
+  scalaVersion.value match {
+    case "2.12.1" => "-no-java-comments" :: Nil
+    case _ => Nil
+  }
+}
+
 lazy val testSettings = Defaults.itSettings ++ Seq(
   parallelExecution in IntegrationTest := false,
   fork in IntegrationTest := true
@@ -34,12 +41,17 @@ lazy val dependencies = Seq(
   "org.apache.kafka"        %  "kafka-clients"            % Version.Kafka,
   "org.apache.kafka"        %  "kafka-streams"            % Version.Kafka,
   "org.scala-lang.modules"  %% "scala-java8-compat"       % "0.8.0",
-  "io.vavr"                 %  "vavr"                     % "0.9.0",
+  "io.vavr"                 %  "vavr"                     % "0.9.1",
 
   "org.scalatest"           %% "scalatest"                % "3.0.1"      % "it,test",
   "com.typesafe.akka"       %% "akka-stream-testkit"      % Version.Akka % "it,test",
   "com.typesafe.akka"       %% "akka-testkit"             % Version.Akka % "it,test",
   "net.manub"               %% "scalatest-embedded-kafka" % "0.11.0"     % "it",
+
+  "com.novocode"            % "junit-interface"           % "0.11"       % "it,test",
+  "org.hamcrest"            % "java-hamcrest"             % "2.0.0.0"    % "it,test",
+  "info.batey.kafka"        % "kafka-unit"                % "0.7"        % "it"         excludeAll
+    ExclusionRule(organization = "org.apache.kafka", name = "kafka_2.11"),
 
   "com.google.protobuf"     %  "protobuf-java"            % Version.Protobuf
 )
