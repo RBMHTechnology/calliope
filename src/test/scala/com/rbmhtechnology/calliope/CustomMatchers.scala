@@ -16,12 +16,10 @@
 
 package com.rbmhtechnology.calliope
 
-
 import org.scalatest.matchers.{MatchResult, Matcher}
 
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
-
 
 trait CustomMatchers {
   def failWith[A <: Throwable](implicit classTag: ClassTag[A]) =
