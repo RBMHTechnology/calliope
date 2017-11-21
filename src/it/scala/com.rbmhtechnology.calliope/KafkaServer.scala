@@ -19,16 +19,16 @@ package com.rbmhtechnology.calliope
 import net.manub.embeddedkafka._
 
 object KafkaServer {
-  import EmbeddedKafkaConfig.defaultConfig
+  val KafkaConfig = EmbeddedKafkaConfig(customBrokerProperties = Map("num.partitions" -> "3"))
 
   def kafkaPort: Int =
-    defaultConfig.kafkaPort
+    KafkaConfig.kafkaPort
 
   def zookeeperPort: Int =
-    defaultConfig.zooKeeperPort
+    KafkaConfig.zooKeeperPort
 
   def start(): Unit =
-    EmbeddedKafka.start()(defaultConfig.copy(customBrokerProperties = Map("num.partitions" -> "3")))
+    EmbeddedKafka.start()(KafkaConfig)
 
   def stop(): Unit =
     EmbeddedKafka.stop()

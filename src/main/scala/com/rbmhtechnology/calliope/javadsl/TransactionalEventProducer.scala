@@ -114,9 +114,6 @@ object TransactionalEventProducer {
     def withProducerProperty(key: String, value: String): Settings[A] =
       copy(delegate.withProducerProperty(key, value))
 
-    def withProducerProvider(producerProvider: ProducerProvider[A]): Settings[A] =
-      copy(delegate.withProducerProvider(s => producerProvider.apply(s).asScala))
-
     private def copy(delegate: scaladsl.TransactionalEventProducer.Settings[A]): Settings[A] =
       new Settings(delegate)
   }
