@@ -16,16 +16,16 @@
 
 package com.rbmhtechnology.calliope.scaladsl
 
+import akka.Done
 import akka.actor.SupervisorStrategy.{Escalate, Stop}
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, FSM, OneForOneStrategy, Props, Stash, SupervisorStrategy}
 import akka.event.{Logging, LoggingAdapter}
+import akka.kafka.ProducerSettings
 import akka.kafka.scaladsl.Producer
-import akka.kafka.{ProducerMessage, ProducerSettings}
 import akka.pattern.{gracefulStop, _}
-import akka.stream.scaladsl.{Flow, Keep, RunnableGraph, SourceQueueWithComplete}
+import akka.stream.scaladsl.{Keep, RunnableGraph, SourceQueueWithComplete}
 import akka.stream.{ActorMaterializer, Attributes, KillSwitches, UniqueKillSwitch}
 import akka.util.Timeout
-import akka.{Done, NotUsed}
 import com.rbmhtechnology.calliope._
 import com.rbmhtechnology.calliope.scaladsl.TransactionalEventProducer.{FailureHandler, ProducerGraph, Settings}
 import com.rbmhtechnology.calliope.serializer.kafka.PayloadFormatSerializer
@@ -44,8 +44,6 @@ object TransactionalEventProducer {
 
   type ProducerGraph = RunnableGraph[((SourceQueueWithComplete[Unit], UniqueKillSwitch), Future[Done])]
   type FailureHandler = (Throwable) => Unit
-  type ProducerFlow[A] = Flow[ProducerMessage.Message[String, SequencedEvent[A], Unit], ProducerMessage.Result[String, SequencedEvent[A], Unit], NotUsed]
-  type ProducerProvider[A] = ProducerSettings[String, SequencedEvent[A]] => ProducerFlow[A]
 
   private val EmptyFailureHandler: FailureHandler = _ => {}
 

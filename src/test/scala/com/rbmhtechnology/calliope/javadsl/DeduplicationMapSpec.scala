@@ -56,7 +56,6 @@ class DeduplicationMapSpec extends WordSpecLike with MustMatchers {
           val map = EmptyDeduplicationMap
             .append(Entry(Topic1, 0, "agg1", "p-1"))
 
-          map.size must be(1)
           map.asScala must contain only Entry(Topic1, 0, "agg1", "p-1")
         }
       }
@@ -106,7 +105,6 @@ class DeduplicationMapSpec extends WordSpecLike with MustMatchers {
             .append(Entry(Topic1, 0, "agg3", "p-4"))
             .append(Entry(Topic1, 0, "agg3", "p-5"))
 
-          map.size must be(3)
           map.asScala.toList must contain inOrderOnly(
             Entry(Topic1, 0, "agg1", "p-0"),
             Entry(Topic1, 0, "agg2", "p-2"),
@@ -126,7 +124,6 @@ class DeduplicationMapSpec extends WordSpecLike with MustMatchers {
             .append(Entry(Topic1, 1, "agg4", "p-6"))
             .append(Entry(Topic1, 1, "agg4", "p-7"))
 
-          map.size must be(4)
           map.asScala.toList must contain inOrderOnly(
             Entry(Topic1, 0, "agg1", "p-0"),
             Entry(Topic1, 0, "agg2", "p-2"),
@@ -147,7 +144,6 @@ class DeduplicationMapSpec extends WordSpecLike with MustMatchers {
             .append(Entry(Topic2, 0, "agg4", "p-6"))
             .append(Entry(Topic2, 0, "agg4", "p-7"))
 
-          map.size must be(4)
           map.asScala.toList must contain inOrderOnly(
             Entry(Topic1, 0, "agg1", "p-0"),
             Entry(Topic1, 0, "agg2", "p-2"),
@@ -173,6 +169,21 @@ class DeduplicationMapSpec extends WordSpecLike with MustMatchers {
 
           map.get(Topic1, 0, "i_do_not_exist") must be(none())
         }
+      }
+    }
+    "the size of the map is queried" must {
+      "return accumulated size of all topic-partitions" in {
+        val map = EmptyDeduplicationMap
+          .append(Entry(Topic1, 0, "agg1", "p-0"))
+          .append(Entry(Topic1, 0, "agg2", "p-1"))
+          .append(Entry(Topic1, 1, "agg1", "p-2"))
+          .append(Entry(Topic1, 1, "agg2", "p-3"))
+          .append(Entry(Topic2, 0, "agg1", "p-4"))
+          .append(Entry(Topic2, 0, "agg2", "p-5"))
+          .append(Entry(Topic2, 1, "agg1", "p-6"))
+          .append(Entry(Topic2, 1, "agg2", "p-7"))
+
+        map.size mustBe 8
       }
     }
   }
