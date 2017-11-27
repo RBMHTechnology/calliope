@@ -20,13 +20,12 @@ import java.time.Instant
 import java.util.UUID
 
 import akka.actor.ActorSystem
-import akka.kafka.scaladsl.{Consumer, Producer}
-import akka.kafka.{ProducerMessage, Subscriptions}
+import akka.kafka.Subscriptions
+import akka.kafka.scaladsl.Consumer
 import akka.serialization.SerializerWithStringManifest
 import akka.stream.scaladsl.Keep
 import akka.stream.testkit.TestSubscriber
 import akka.stream.testkit.scaladsl.TestSink
-import akka.testkit.TestProbe
 import com.rbmhtechnology.calliope.scaladsl.TransactionalEventProducer.Settings
 import com.rbmhtechnology.calliope.scaladsl.{EventStore, EventWriter, TransactionalEventProducer}
 import org.apache.kafka.clients.consumer.ConsumerRecord
@@ -336,25 +335,6 @@ class TransactionalEventProducerSpec extends KafkaSpec with MustMatchers with Ty
         writer.writeEvent(Event("1", "agg1"))
 
         consumer.requestNext().value().payload mustBe Event("1", "agg1")
-      }
-    }
-    "created with custom settings" must {
-      "use the producer-provider configured in the settings" in {
-        val flowProbe = TestProbe()
-        val (topic, consumer) = topicConsumer()
-        val writer = runTransactionalEventProducer(topic, WritableEventStore(), Settings()
-          .withBootstrapServers(bootstrapServers)
-          .withProducerProvider(s =>
-            Producer.flow(s).map { (ev: ProducerMessage.Result[String, SequencedEvent[Event], Unit]) =>
-              flowProbe.ref ! ev.message.record.value().payload
-              ev
-            }
-          ))
-
-        writer.writeEvent(Event("1", "agg1"))
-
-        consumer.requestNext().value().payload mustBe Event("1", "agg1")
-        flowProbe.expectMsg(Event("1", "agg1"))
       }
     }
     "when stopped" must {

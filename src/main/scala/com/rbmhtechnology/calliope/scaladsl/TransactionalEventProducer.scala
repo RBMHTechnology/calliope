@@ -16,23 +16,22 @@
 
 package com.rbmhtechnology.calliope.scaladsl
 
+import akka.Done
 import akka.actor.SupervisorStrategy.{Escalate, Stop}
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, FSM, OneForOneStrategy, Props, Stash, SupervisorStrategy}
 import akka.event.{Logging, LoggingAdapter}
+import akka.kafka.ProducerSettings
 import akka.kafka.scaladsl.Producer
-import akka.kafka.{ProducerMessage, ProducerSettings}
 import akka.pattern.{gracefulStop, _}
-import akka.stream.scaladsl.{Flow, Keep, RunnableGraph, SourceQueueWithComplete}
+import akka.stream.scaladsl.{Keep, RunnableGraph, SourceQueueWithComplete}
 import akka.stream.{ActorMaterializer, Attributes, KillSwitches, UniqueKillSwitch}
 import akka.util.Timeout
-import akka.{Done, NotUsed}
 import com.rbmhtechnology.calliope._
 import com.rbmhtechnology.calliope.scaladsl.TransactionalEventProducer.{FailureHandler, ProducerGraph, Settings}
 import com.rbmhtechnology.calliope.serializer.kafka.PayloadFormatSerializer
 import com.typesafe.config.Config
 import org.apache.kafka.common.serialization.StringSerializer
 
-import scala.collection.immutable
 import scala.concurrent.Future
 import scala.concurrent.duration.{FiniteDuration, _}
 import scala.util.{Failure, Success}
@@ -45,8 +44,6 @@ object TransactionalEventProducer {
 
   type ProducerGraph = RunnableGraph[((SourceQueueWithComplete[Unit], UniqueKillSwitch), Future[Done])]
   type FailureHandler = (Throwable) => Unit
-  type ProducerFlow[A] = Flow[ProducerMessage.Message[String, SequencedEvent[A], Unit], ProducerMessage.Result[String, SequencedEvent[A], Unit], NotUsed]
-  type ProducerProvider[A] = ProducerSettings[String, SequencedEvent[A]] => ProducerFlow[A]
 
   private val EmptyFailureHandler: FailureHandler = _ => {}
 
@@ -91,17 +88,14 @@ object TransactionalEventProducer {
                  bootstrapServers: String,
                  producerConfig: Config)(implicit system: ActorSystem): Settings[A] =
       new Settings[A](readBufferSize, readInterval, deleteInterval, transactionTimeout,
-        ProducerSettings(producerConfig, new StringSerializer(), PayloadFormatSerializer.apply[SequencedEvent[A]]).withBootstrapServers(bootstrapServers),
-        Producer.flow(_))
+        ProducerSettings(producerConfig, new StringSerializer(), PayloadFormatSerializer.apply[SequencedEvent[A]]).withBootstrapServers(bootstrapServers))
   }
 
   class Settings[A] private(val readBufferSize: Int,
                             val readInterval: FiniteDuration,
                             val deleteInterval: FiniteDuration,
                             val transactionTimeout: FiniteDuration,
-                            val producerSettings: ProducerSettings[String, SequencedEvent[A]],
-                            private val producerProvider: ProducerProvider[A]) {
-
+                            val producerSettings: ProducerSettings[String, SequencedEvent[A]]) {
     def withReadBufferSize(readBufferSize: Int): Settings[A] =
       copy(readBufferSize = readBufferSize)
 
@@ -129,19 +123,12 @@ object TransactionalEventProducer {
     def withProducerProperty(key: String, value: String): Settings[A] =
       copy(producerSettings = producerSettings.withProperty(key, value))
 
-    def withProducerProvider(producerProvider: ProducerProvider[A]): Settings[A] =
-      copy(producerProvider = producerProvider)
-
-    private[calliope] def producerFlow(): ProducerFlow[A] =
-      producerProvider(producerSettings)
-
     private def copy(readBufferSize: Int = readBufferSize,
                      readInterval: FiniteDuration = readInterval,
                      deleteInterval: FiniteDuration = deleteInterval,
                      transactionTimeout: FiniteDuration = transactionTimeout,
-                     producerSettings: ProducerSettings[String, SequencedEvent[A]] = producerSettings,
-                     producerProvider: ProducerProvider[A] = producerProvider): Settings[A] =
-      new Settings(readBufferSize, readInterval, deleteInterval, transactionTimeout, producerSettings, producerProvider)
+                     producerSettings: ProducerSettings[String, SequencedEvent[A]] = producerSettings): Settings[A] =
+      new Settings(readBufferSize, readInterval, deleteInterval, transactionTimeout, producerSettings)
   }
 }
 
@@ -221,7 +208,7 @@ private object ProducerGraph {
     EventSource(eventReader, settings.readBufferSize, settings.readInterval)
       .viaMat(KillSwitches.single)(Keep.both)
       .viaMat(ProducerFlow[EventRecord[A]].toMessage)(Keep.left)
-      .viaMat(settings.producerFlow())(Keep.left)
+      .viaMat(Producer.flow(settings.producerSettings))(Keep.left)
       .log("produced", identity).withAttributes(Attributes.logLevels(onFailure = Logging.DebugLevel))
       .map(_.message.record.value())
       .toMat(EventDeletion.sink(eventDeleter, settings.deleteInterval))(Keep.both)

@@ -37,7 +37,7 @@ lazy val protocSettings: Seq[Setting[_]] = ProtobufPlugin.protobufSettings ++ Se
 
 lazy val dependencies = Seq(
   "com.typesafe.akka"       %% "akka-stream"              % Version.Akka ,
-  "com.typesafe.akka"       %% "akka-stream-kafka"        % "0.13",
+  "com.typesafe.akka"       %% "akka-stream-kafka"        % "0.17",
   "org.apache.kafka"        %  "kafka-clients"            % Version.Kafka,
   "org.apache.kafka"        %  "kafka-streams"            % Version.Kafka,
   "org.scala-lang.modules"  %% "scala-java8-compat"       % "0.8.0",
@@ -46,12 +46,7 @@ lazy val dependencies = Seq(
   "org.scalatest"           %% "scalatest"                % "3.0.1"      % "it,test",
   "com.typesafe.akka"       %% "akka-stream-testkit"      % Version.Akka % "it,test",
   "com.typesafe.akka"       %% "akka-testkit"             % Version.Akka % "it,test",
-  "net.manub"               %% "scalatest-embedded-kafka" % "0.11.0"     % "it",
-
-  "com.novocode"            % "junit-interface"           % "0.11"       % "it,test",
-  "org.hamcrest"            % "java-hamcrest"             % "2.0.0.0"    % "it,test",
-  "info.batey.kafka"        % "kafka-unit"                % "0.7"        % "it"         excludeAll
-    ExclusionRule(organization = "org.apache.kafka", name = "kafka_2.11"),
+  "net.manub"               %% "scalatest-embedded-kafka" % "1.0.0"      % "it",
 
   "com.google.protobuf"     %  "protobuf-java"            % Version.Protobuf
 )
