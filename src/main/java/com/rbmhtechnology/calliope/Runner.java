@@ -19,11 +19,8 @@ package com.rbmhtechnology.calliope;
 import akka.Done;
 import akka.actor.AbstractActor;
 import akka.actor.Props;
-import akka.japi.pf.ReceiveBuilder;
 import akka.stream.ActorMaterializer;
 import akka.stream.javadsl.RunnableGraph;
-import scala.PartialFunction;
-import scala.runtime.BoxedUnit;
 
 import java.util.concurrent.CompletionStage;
 
@@ -56,8 +53,8 @@ class Runner extends AbstractActor {
   }
 
   @Override
-  public PartialFunction<Object, BoxedUnit> receive() {
-    return ReceiveBuilder.create()
+  public Receive createReceive() {
+    return receiveBuilder()
       .match(Fail.class, f -> {
         throw new StreamExecutorException.ExecutionFailed(f.cause());
       })

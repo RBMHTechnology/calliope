@@ -23,11 +23,8 @@ import akka.actor.Props;
 import akka.actor.SupervisorStrategy;
 import akka.event.Logging;
 import akka.event.LoggingAdapter;
-import akka.japi.pf.ReceiveBuilder;
 import akka.stream.javadsl.RunnableGraph;
 import io.vavr.control.Option;
-import scala.PartialFunction;
-import scala.runtime.BoxedUnit;
 
 import java.util.concurrent.CompletionStage;
 
@@ -39,34 +36,32 @@ import static io.vavr.control.Option.some;
 
 public class StreamExecutor extends AbstractActor {
 
-  private LoggingAdapter log = Logging.getLogger(getContext().system(), this);
+  private final LoggingAdapter log = Logging.getLogger(getContext().system(), this);
+
+  private final AbstractActor.Receive initializing;
 
   private Option<ActorRef> runner = Option.none();
 
   private StreamExecutor(final Props runnerProps, final StreamExecutorSupervision supervision) {
-    context().become(initializing(runnerProps, supervision));
+    final AbstractActor.Receive running =
+      receiveBuilder()
+        .match(RunStream.class, x ->
+          sender().tell(StreamStarted.instance(), self())
+        )
+        .build();
+
+    initializing =
+      receiveBuilder()
+        .match(RunStream.class, x -> {
+          runner = some(deployRunner(runnerProps, supervision));
+          sender().tell(StreamStarted.instance(), self());
+          getContext().become(running);
+        })
+        .build();
   }
 
   public static Props props(final RunnableGraph<CompletionStage<Done>> graph, final StreamExecutorSupervision supervision) {
     return Props.create(StreamExecutor.class, () -> new StreamExecutor(Runner.props(graph), supervision));
-  }
-
-  private PartialFunction<Object, BoxedUnit> initializing(final Props runnerProps, final StreamExecutorSupervision supervision) {
-    return ReceiveBuilder.create()
-      .match(RunStream.class, x -> {
-        runner = some(deployRunner(runnerProps, supervision));
-        sender().tell(StreamStarted.instance(), self());
-        context().become(running());
-      })
-      .build();
-  }
-
-  private PartialFunction<Object, BoxedUnit> running() {
-    return ReceiveBuilder.create()
-      .match(RunStream.class, x ->
-        sender().tell(StreamStarted.instance(), self())
-      )
-      .build();
   }
 
   private ActorRef deployRunner(final Props runnerProps, final StreamExecutorSupervision supervision) {
@@ -80,6 +75,11 @@ public class StreamExecutor extends AbstractActor {
         )
       ));
     return context().actorOf(supervisorProps);
+  }
+
+  @Override
+  public Receive createReceive() {
+    return initializing;
   }
 
   @Override
