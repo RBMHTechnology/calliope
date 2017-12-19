@@ -51,7 +51,6 @@ import java.time.Duration;
 import java.util.concurrent.CompletionStage;
 
 import static akka.event.Logging.DebugLevel;
-import static akka.event.Logging.InfoLevel;
 import static com.rbmhtechnology.calliope.javadsl.CompletableFutures.retry;
 import static com.rbmhtechnology.calliope.StreamExecutorSupervision.Directive.RESTART;
 import static com.rbmhtechnology.calliope.StreamExecutorSupervision.Directive.STOP;
@@ -121,7 +120,7 @@ public class EventConsumer<K, V> {
     final CommitSettings commit = settings.commitSettings();
 
     return Consumer.committableSource(settings.kafkaConsumerSettings(), Subscriptions.topics(topic.toJavaSet()))
-      .log("Event consumed", logger).withAttributes(Attributes.logLevels(InfoLevel(), DebugLevel(), DebugLevel()))
+      .log("Event consumed", logger).withAttributes(Attributes.logLevels(DebugLevel(), DebugLevel(), DebugLevel()))
       .map(m -> m.record().value()
         .map(v -> new CommittableMessage<>(recordOf(m.record(), v), m.committableOffset()))
         .getOrElseThrow(PayloadDeserializationException::new)
@@ -131,13 +130,13 @@ public class EventConsumer<K, V> {
         r -> retry(delivery.retries(), () -> eventHandler.handleEvent(r.record().value(), delivery.timeout()))
           .thenApply(x -> r)
       )
-      .log("Event processed", logger).withAttributes(Attributes.logLevels(InfoLevel(), DebugLevel(), DebugLevel()))
+      .log("Event processed", logger).withAttributes(Attributes.logLevels(DebugLevel(), DebugLevel(), DebugLevel()))
       .batch(commit.batchSize(),
         first -> ConsumerMessage.emptyCommittableOffsetBatch().updated(first.committableOffset()),
         (batch, message) -> batch.updated(message.committableOffset())
       )
       .mapAsync(commit.parallelism(), ConsumerMessage.Committable::commitJavadsl)
-      .log("Events committed", logger).withAttributes(Attributes.logLevels(InfoLevel(), DebugLevel(), DebugLevel()))
+      .log("Events committed", logger).withAttributes(Attributes.logLevels(DebugLevel(), DebugLevel(), DebugLevel()))
       .toMat(Sink.ignore(), Keep.right());
   }
 
