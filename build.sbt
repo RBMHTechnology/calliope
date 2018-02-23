@@ -5,7 +5,7 @@ import sbtprotobuf.ProtobufPlugin
 lazy val commonSettings = Seq(
   organization := "com.rbmhtechnology",
   name := "calliope",
-  version := "0.4.0-SNAPSHOT",
+  version := "0.4.0",
   scalaVersion := "2.11.11",
   crossScalaVersions := Seq("2.11.11", "2.12.1")
 )
